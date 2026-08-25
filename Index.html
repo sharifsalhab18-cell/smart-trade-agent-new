@@ -1,4 +1,79 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>الوكيل التجاري الذكي</title>
+<style>
+body{font-family:Arial;margin:0;background:#f3f6f9;color:#222}
+header{background:#172554;color:white;padding:25px;text-align:center}
+.container{max-width:700px;margin:20px auto;padding:15px}
+.card{background:white;padding:20px;margin-bottom:15px;border-radius:15px;box-shadow:0 3px 12px #ccc}
+input,button{width:100%;box-sizing:border-box;padding:14px;margin-top:10px;border-radius:10px;font-size:16px}
+input{border:1px solid #ccc}
+button{background:#2563eb;color:white;border:0;font-weight:bold}
+#result{margin-top:15px;padding:15px;background:#eef2ff;border-radius:10px}
+</style>
+</head>
 
+<body>
+
+<header>
+<h1>🤖 الوكيل التجاري الذكي</h1>
+<p>إدارة وتحليل الصفقات التجارية</p>
+</header>
+
+<div class="container">
+
+<div class="card">
+<h2>📦 صفقة جديدة</h2>
+
+<input id="product" placeholder="اسم المنتج">
+<input id="buy" type="number" placeholder="سعر الشراء">
+<input id="sell" type="number" placeholder="سعر البيع">
+
+<button onclick="analyze()">تحليل الصفقة</button>
+
+<div id="result">أدخل بيانات الصفقة.</div>
+</div>
+
+<div class="card">
+<h2>💼 حالة الوكيل</h2>
+<p>🟢 الوكيل جاهز للعمل</p>
+<p>📊 تحليل الأرباح متاح</p>
+</div>
+
+</div>
+
+<script>
+function analyze(){
+let product=document.getElementById("product").value;
+let buy=Number(document.getElementById("buy").value);
+let sell=Number(document.getElementById("sell").value);
+let result=document.getElementById("result");
+
+if(!product || buy<=0 || sell<=0){
+result.innerHTML="⚠️ أدخل اسم المنتج والأسعار.";
+return;
+}
+
+let profit=sell-buy;
+let percent=(profit/buy)*100;
+
+if(profit>0){
+result.innerHTML="✅ الصفقة مربحة<br><br>"+
+"المنتج: "+product+"<br>"+
+"الربح: "+profit.toFixed(2)+"<br>"+
+"نسبة الربح: "+percent.toFixed(2)+"%";
+}else{
+result.innerHTML="❌ الصفقة غير مربحة<br><br>"+
+"الخسارة: "+Math.abs(profit).toFixed(2);
+}
+}
+</script>
+
+</body>
+</html>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
