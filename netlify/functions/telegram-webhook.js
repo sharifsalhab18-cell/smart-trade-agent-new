@@ -12,11 +12,11 @@ exports.handler = async (event) => {
     const token = process.env.TELEGRAM_BOT_TOKEN;
 
     if (!token) {
-      return {
-        statusCode: 500,
-        body: "TELEGRAM_BOT_TOKEN is not configured"
-      };
+      return { statusCode: 500, body: "TELEGRAM_BOT_TOKEN is not configured" };
     }
+
+    // Temporary conversation state
+    const state = text === "/search" ? "product" : "next";
 
     let reply;
 
@@ -33,8 +33,9 @@ exports.handler = async (event) => {
         "iPhone 13";
     } else {
       reply =
-        "استلمت طلبك: " + text + "\n\n" +
-        "البحث الحقيقي سيتم ربطه في الخطوة التالية.";
+        "📦 المنتج: " + text + "\n\n" +
+        "الآن أرسل أقصى سعر شراء تريده بالـ hryvnia (грн).\n\n" +
+        "مثال: 15000";
     }
 
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -52,6 +53,7 @@ exports.handler = async (event) => {
       statusCode: 200,
       body: "OK"
     };
+
   } catch (error) {
     console.error(error);
 
