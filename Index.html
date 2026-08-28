@@ -160,10 +160,13 @@ button:hover{
 
 </div>
 
-
 <script>
 
-function searchOpportunity(){
+const API_URL =
+  "/.netlify/functions/telegram-webhook";
+
+
+async function searchOpportunity(){
 
   const product =
     document.getElementById("product").value.trim();
@@ -191,24 +194,72 @@ function searchOpportunity(){
 
 
   result.innerHTML =
-    "🔎 تم تسجيل طلب البحث.<br><br>" +
+    "⏳ الوكيل يستلم طلبك...";
 
-    "📦 المنتج: " + product + "<br>" +
 
-    "💰 أقصى سعر شراء: " +
-    maxPrice.toLocaleString() +
-    " грн<br>" +
+  try {
 
-    "📈 أدنى ربح: " +
-    minProfit.toLocaleString() +
-    " грн<br>" +
+    const response = await fetch(API_URL, {
 
-    "🇺🇦 المنطقة: " +
-    (region || "أوكرانيا") +
+      method: "POST",
 
-    "<br><br>" +
+      headers: {
+        "Content-Type": "application/json"
+      },
 
-    "⏳ سيتم ربط البحث الحقيقي بالمصادر الخارجية في المرحلة التالية.";
+      body: JSON.stringify({
+
+        source: "web",
+
+        product: product,
+
+        maxPrice: maxPrice,
+
+        minProfit: minProfit,
+
+        region: region || "أوكرانيا"
+
+      })
+
+    });
+
+
+    if(!response.ok){
+      throw new Error("HTTP " + response.status);
+    }
+
+
+    const data = await response.json();
+
+
+    result.innerHTML =
+      "✅ تم إرسال الطلب إلى الوكيل.<br><br>" +
+
+      "📦 المنتج: " + product + "<br>" +
+
+      "💰 أقصى شراء: " +
+      maxPrice.toLocaleString() +
+      " грн<br>" +
+
+      "📈 أدنى ربح: " +
+      minProfit.toLocaleString() +
+      " грн<br>" +
+
+      "🇺🇦 المنطقة: " +
+      (region || "أوكرانيا") +
+
+      "<br><br>" +
+
+      "🔎 الوكيل بدأ معالجة الطلب.";
+
+  } catch(error) {
+
+    console.error(error);
+
+    result.innerHTML =
+      "❌ تعذر الاتصال بالوكيل.<br><br>" +
+      "تأكد من أن Netlify يعمل ثم حاول مرة أخرى.";
+  }
 }
 
 
@@ -217,15 +268,12 @@ function startSelling(){
   const result =
     document.getElementById("result");
 
-  result.innerHTML =
-    "🏷️ وضع البيع<br><br>" +
 
-    "في المرحلة التالية يمكنك إرسال صورة المنتج، " +
-    "وسنضيف بيانات السعر والوصف والمنطقة، " +
-    "ثم نربط الوكيل بالبحث عن مشترين.";
+  result.innerHTML =
+    "🏷️ وضع البائع<br><br>" +
+
+    "في المرحلة التالية يمكنك إرسال صورة المنتج " +
+    "ومعلوماته، ثم يبدأ الوكيل بالبحث عن مشترين محتملين.";
 }
 
 </script>
-
-</body>
-</html>
