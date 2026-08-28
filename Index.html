@@ -3,215 +3,228 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>الوكيل التجاري الذكي</title>
+<title>Smart Trade Agent</title>
+
 <style>
-body{font-family:Arial;margin:0;background:#f3f6f9;color:#222}
-header{background:#172554;color:white;padding:25px;text-align:center}
-.container{max-width:700px;margin:20px auto;padding:15px}
-.card{background:white;padding:20px;margin-bottom:15px;border-radius:15px;box-shadow:0 3px 12px #ccc}
-input,button{width:100%;box-sizing:border-box;padding:14px;margin-top:10px;border-radius:10px;font-size:16px}
-input{border:1px solid #ccc}
-button{background:#2563eb;color:white;border:0;font-weight:bold}
-#result{margin-top:15px;padding:15px;background:#eef2ff;border-radius:10px}
+body{
+  font-family:Arial,sans-serif;
+  margin:0;
+  background:#f3f6f9;
+  color:#1f2937;
+}
+
+header{
+  background:#172554;
+  color:white;
+  padding:25px 15px;
+  text-align:center;
+}
+
+.container{
+  max-width:700px;
+  margin:20px auto;
+  padding:15px;
+}
+
+.card{
+  background:white;
+  padding:20px;
+  margin-bottom:15px;
+  border-radius:15px;
+  box-shadow:0 3px 12px rgba(0,0,0,.08);
+}
+
+input,button{
+  width:100%;
+  box-sizing:border-box;
+  padding:14px;
+  margin-top:10px;
+  border-radius:10px;
+  font-size:16px;
+}
+
+input{
+  border:1px solid #ccc;
+}
+
+button{
+  background:#2563eb;
+  color:white;
+  border:0;
+  font-weight:bold;
+  cursor:pointer;
+}
+
+button:hover{
+  background:#1d4ed8;
+}
+
+.sellButton{
+  background:#16a34a;
+}
+
+.sellButton:hover{
+  background:#15803d;
+}
+
+#result{
+  margin-top:15px;
+  padding:15px;
+  background:#eef2ff;
+  border-radius:10px;
+  line-height:1.8;
+}
+
+.status{
+  color:#15803d;
+  font-weight:bold;
+}
 </style>
 </head>
 
 <body>
 
 <header>
-<h1>🤖 الوكيل التجاري الذكي</h1>
-<p>إدارة وتحليل الصفقات التجارية</p>
-</header>
-
-<div class="container">
-
-<div class="card">
-<h2>📦 صفقة جديدة</h2>
-
-<input id="product" placeholder="اسم المنتج">
-<input id="buy" type="number" placeholder="سعر الشراء">
-<input id="sell" type="number" placeholder="سعر البيع">
-
-<button onclick="analyze()">تحليل الصفقة</button>
-
-<div id="result">أدخل بيانات الصفقة.</div>
-</div>
-
-<div class="card">
-<h2>💼 حالة الوكيل</h2>
-<p>🟢 الوكيل جاهز للعمل</p>
-<p>📊 تحليل الأرباح متاح</p>
-</div>
-
-</div>
-
-<script>
-function analyze(){
-let product=document.getElementById("product").value;
-let buy=Number(document.getElementById("buy").value);
-let sell=Number(document.getElementById("sell").value);
-let result=document.getElementById("result");
-
-if(!product || buy<=0 || sell<=0){
-result.innerHTML="⚠️ أدخل اسم المنتج والأسعار.";
-return;
-}
-
-let profit=sell-buy;
-let percent=(profit/buy)*100;
-
-if(profit>0){
-result.innerHTML="✅ الصفقة مربحة<br><br>"+
-"المنتج: "+product+"<br>"+
-"الربح: "+profit.toFixed(2)+"<br>"+
-"نسبة الربح: "+percent.toFixed(2)+"%";
-}else{
-result.innerHTML="❌ الصفقة غير مربحة<br><br>"+
-"الخسارة: "+Math.abs(profit).toFixed(2);
-}
-}
-</script>
-
-</body>
-</html>
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>الوكيل التجاري الذكي</title>
-
-  <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: #f3f6f9;
-      color: #1f2937;
-    }
-
-    header {
-      background: #172554;
-      color: white;
-      padding: 20px;
-      text-align: center;
-    }
-
-    .container {
-      max-width: 700px;
-      margin: 20px auto;
-      padding: 15px;
-    }
-
-    .card {
-      background: white;
-      border-radius: 15px;
-      padding: 20px;
-      margin-bottom: 15px;
-      box-shadow: 0 3px 12px rgba(0,0,0,0.08);
-    }
-
-    h2 {
-      margin-top: 0;
-    }
-
-    input, textarea, button {
-      width: 100%;
-      box-sizing: border-box;
-      padding: 13px;
-      margin-top: 10px;
-      border-radius: 10px;
-      border: 1px solid #d1d5db;
-      font-size: 16px;
-    }
-
-    textarea {
-      height: 100px;
-      resize: vertical;
-    }
-
-    button {
-      background: #2563eb;
-      color: white;
-      border: none;
-      cursor: pointer;
-      font-weight: bold;
-    }
-
-    button:hover {
-      background: #1d4ed8;
-    }
-
-    #result {
-      margin-top: 15px;
-      padding: 15px;
-      background: #eef2ff;
-      border-radius: 10px;
-      min-height: 30px;
-    }
-  </style>
-</head>
-
-<body>
-
-<header>
-  <h1>🤖 الوكيل التجاري الذكي</h1>
-  <p>إدارة وتحليل الصفقات التجارية</p>
+  <h1>🤖 Smart Trade Agent</h1>
+  <p>الوكيل التجاري الذكي</p>
 </header>
 
 <div class="container">
 
   <div class="card">
-    <h2>📦 صفقة جديدة</h2>
 
-    <input id="product" type="text" placeholder="اسم المنتج">
+    <h2>🔎 البحث عن فرصة شراء</h2>
 
-    <input id="buy" type="number" placeholder="سعر الشراء">
+    <input
+      id="product"
+      type="text"
+      placeholder="اسم المنتج — مثال: iPhone 16"
+    >
 
-    <input id="sell" type="number" placeholder="سعر البيع">
+    <input
+      id="maxPrice"
+      type="number"
+      placeholder="أقصى سعر شراء — грн"
+    >
 
-    <button onclick="analyzeDeal()">تحليل الصفقة</button>
+    <input
+      id="minProfit"
+      type="number"
+      placeholder="أدنى ربح مطلوب — грн"
+    >
+
+    <input
+      id="region"
+      type="text"
+      value="أوكرانيا"
+      placeholder="المنطقة"
+    >
+
+    <button onclick="searchOpportunity()">
+      🔎 بحث عن فرص
+    </button>
 
     <div id="result">
-      أدخل بيانات الصفقة ثم اضغط تحليل الصفقة.
+      أدخل بيانات المنتج ثم اضغط «بحث عن فرص».
     </div>
+
   </div>
 
+
   <div class="card">
+
+    <h2>🏷️ بيع منتج</h2>
+
+    <p>
+      يمكنك لاحقًا إرسال صورة المنتج ومعلوماته،
+      وسيبحث الوكيل عن مشترين محتملين.
+    </p>
+
+    <button class="sellButton" onclick="startSelling()">
+      🏷️ ابدأ البحث عن مشترٍ
+    </button>
+
+  </div>
+
+
+  <div class="card">
+
     <h2>💼 حالة الوكيل</h2>
-    <p>🟢 الوكيل جاهز للعمل</p>
-    <p>📊 تحليل الأرباح متاح</p>
-    <p>🔐 التحكم بالصفقات: مفعّل</p>
+
+    <p class="status">🟢 الوكيل متصل</p>
+    <p>🔎 البحث عن فرص: جاهز</p>
+    <p>🏷️ البحث عن مشترين: جاهز للربط</p>
+    <p>📊 تحليل الأرباح: متاح</p>
+
   </div>
 
 </div>
 
-<script>
-function analyzeDeal() {
-  const product = document.getElementById("product").value;
-  const buy = Number(document.getElementById("buy").value);
-  const sell = Number(document.getElementById("sell").value);
-  const result = document.getElementById("result");
 
-  if (!product || buy <= 0 || sell <= 0) {
-    result.innerHTML = "⚠️ يرجى إدخال اسم المنتج وسعر الشراء وسعر البيع.";
+<script>
+
+function searchOpportunity(){
+
+  const product =
+    document.getElementById("product").value.trim();
+
+  const maxPrice =
+    Number(document.getElementById("maxPrice").value);
+
+  const minProfit =
+    Number(document.getElementById("minProfit").value);
+
+  const region =
+    document.getElementById("region").value.trim();
+
+  const result =
+    document.getElementById("result");
+
+
+  if(!product || maxPrice <= 0 || minProfit <= 0){
+
+    result.innerHTML =
+      "⚠️ يرجى إدخال اسم المنتج وأقصى سعر شراء وأدنى ربح.";
+
     return;
   }
 
-  const profit = sell - buy;
-  const margin = (profit / buy) * 100;
 
-  if (profit > 0) {
-    result.innerHTML =
-      "✅ الصفقة مربحة<br><br>" +
-      "المنتج: " + product + "<br>" +
-      "الربح: " + profit.toFixed(2) + "<br>" +
-      "نسبة الربح: " + margin.toFixed(2) + "%";
-  } else {
-    result.innerHTML =
-      "❌ الصفقة غير مربحة<br><br>" +
-      "الخسارة: " + Math.abs(profit).toFixed(2);
-  }
+  result.innerHTML =
+    "🔎 تم تسجيل طلب البحث.<br><br>" +
+
+    "📦 المنتج: " + product + "<br>" +
+
+    "💰 أقصى سعر شراء: " +
+    maxPrice.toLocaleString() +
+    " грн<br>" +
+
+    "📈 أدنى ربح: " +
+    minProfit.toLocaleString() +
+    " грн<br>" +
+
+    "🇺🇦 المنطقة: " +
+    (region || "أوكرانيا") +
+
+    "<br><br>" +
+
+    "⏳ سيتم ربط البحث الحقيقي بالمصادر الخارجية في المرحلة التالية.";
 }
+
+
+function startSelling(){
+
+  const result =
+    document.getElementById("result");
+
+  result.innerHTML =
+    "🏷️ وضع البيع<br><br>" +
+
+    "في المرحلة التالية يمكنك إرسال صورة المنتج، " +
+    "وسنضيف بيانات السعر والوصف والمنطقة، " +
+    "ثم نربط الوكيل بالبحث عن مشترين.";
+}
+
 </script>
 
 </body>
