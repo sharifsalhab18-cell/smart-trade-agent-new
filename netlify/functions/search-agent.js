@@ -1,12 +1,8 @@
 exports.handler = async function (event) {
 
-  // السماح بطلبات POST فقط
   if (event.httpMethod !== "POST") {
     return {
       statusCode: 405,
-      headers: {
-        "Content-Type": "application/json"
-      },
       body: JSON.stringify({
         ok: false,
         message: "Method Not Allowed"
@@ -26,9 +22,6 @@ exports.handler = async function (event) {
     if (!product || maxPrice <= 0 || minProfit <= 0) {
       return {
         statusCode: 400,
-        headers: {
-          "Content-Type": "application/json"
-        },
         body: JSON.stringify({
           ok: false,
           message: "بيانات البحث غير مكتملة"
@@ -36,28 +29,57 @@ exports.handler = async function (event) {
       };
     }
 
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = process.env.TELEGRAM_CHAT_ID;
+
+    if (!token || !chatId) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({
+          ok: false,
+          message: "إعدادات Telegram غير موجودة في Netlify"
+        })
+      };
+    }
+
+    const message =
+      "🔎 طلب جديد من Smart Trade Agent\n\n" +
+      "📦 المنتج: " + product + "\n" +
+      "💰 أقصى شراء: " + maxPrice.toLocaleString() + " грн\n" +
+      "📈 أدنى ربح: " + minProfit.toLocaleString() + " грн\n" +
+      "🇺🇦 المنطقة: " + region;
+
+    const telegramResponse = await fetch(
+      "https://api.telegram.org/bot" + token + "/sendMessage",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: message
+        })
+      }
+    );
+
+    const telegramData = await telegramResponse.json();
+
+    if (!telegramResponse.ok || !telegramData.ok) {
+      return {
+        statusCode: 502,
+        body: JSON.stringify({
+          ok: false,
+          message: "فشل إرسال الطلب إلى Telegram"
+        })
+      };
+    }
+
     return {
       statusCode: 200,
-      headers: {
-        "Content-Type": "application/json"
-      },
       body: JSON.stringify({
-
         ok: true,
-
-        message: "تم استلام طلب البحث بنجاح",
-
-        search: {
-          product: product,
-          maxPrice: maxPrice,
-          minProfit: minProfit,
-          region: region
-        },
-
-        status: "agent_connected",
-
-        note: "تم الاتصال بالوكيل. البحث الخارجي سيتم ربطه في المرحلة التالية."
-
+        message: "تم إرسال الطلب إلى الوكيل وTelegram"
       })
     };
 
@@ -65,12 +87,9 @@ exports.handler = async function (event) {
 
     return {
       statusCode: 500,
-      headers: {
-        "Content-Type": "application/json"
-      },
       body: JSON.stringify({
         ok: false,
-        message: "حدث خطأ في معالجة الطلب"
+        message: "حدث خطأ في الوكيل"
       })
     };
   }
