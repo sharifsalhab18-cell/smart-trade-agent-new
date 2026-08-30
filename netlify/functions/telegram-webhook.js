@@ -283,15 +283,21 @@ async function searchOLX(
         "Authorization":
           `Bearer ${apifyToken}`
       },
-
-      body: JSON.stringify({
-        searchQuery: product,
-        maxItems: 25,
-        sortBy: "date",
-        proxyConfiguration: {
-          useApifyProxy: true
-        }
-      })
+body: JSON.stringify({
+  startUrls: [
+    {
+      url:
+        "https://www.olx.ua/uk/elektronika/telefony-i-aksesuary/mobilnye-telefony-smartfony/q-" +
+        encodeURIComponent(product.trim().toLowerCase()) +
+        "/"
+    }
+  ],
+  maxItems: 25,
+  proxyConfiguration: {
+    useApifyProxy: true
+  }
+})
+      
     }
   );
 
