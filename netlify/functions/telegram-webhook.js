@@ -20,172 +20,218 @@ exports.handler = async (event) => {
     const token = process.env.TELEGRAM_BOT_TOKEN;
     const apifyToken = process.env.APIFY_API_TOKEN;
 
-    if (!token) {
+    if (!token || !apifyToken) {
       return {
         statusCode: 500,
-        body: "TELEGRAM_BOT_TOKEN is not configured"
-      };
-    }
-
-    if (!apifyToken) {
-      return {
-        statusCode: 500,
-        body: "APIFY_API_TOKEN is not configured"
+        body: "Required environment variable is missing"
       };
     }
 
     if (!sessions[chatId]) {
-      sessions[chatId] = {
-        step: "idle",
-        product: "",
-        maxPrice: 0,
-        minProfit: 0
-      };
+      resetSession(chatId);
     }
 
     const session = sessions[chatId];
 
-    let reply = "";
+    // ==============================
+    // START
+    // ==============================
 
-    // /start
     if (text === "/start") {
-      session.step = "idle";
-      session.product = "";
-      session.maxPrice = 0;
-      session.minProfit = 0;
+      resetSession(chatId);
 
-      reply =
+      await sendTelegram(
+        token,
+        chatId,
         "Welcome to Smart Trade Agent 🤖\n\n" +
         "Agent connected successfully. Bot ready.\n\n" +
-        "استخدم /search لبدء البحث عن فرصة تجارية.";
+        "استخدم /search لبدء البحث."
+      );
+
+      return {
+        statusCode: 200,
+        body: "OK"
+      };
     }
 
-    // /search
-    else if (text === "/search") {
-      session.step = "product";
-      session.product = "";
-      session.maxPrice = 0;
-      session.minProfit = 0;
+    // ==============================
+    // NEW SEARCH
+    // ==============================
 
-      reply =
+    if (text === "/search") {
+      resetSession(chatId);
+
+      await sendTelegram(
+        token,
+        chatId,
         "🔎 Smart Trade Agent\n\n" +
         "أرسل اسم المنتج الذي تريد البحث عنه.\n\n" +
         "مثال:\n" +
-        "iPhone 14";
+        "iPhone 14"
+      );
+
+      return {
+        statusCode: 200,
+        body: "OK"
+      };
     }
 
-    // Product
-    else if (session.step === "product") {
+    // ==============================
+    // PRODUCT
+    // ==============================
+
+    if (
+      session.step === "idle" ||
+      session.step === "ready"
+    ) {
       session.product = text;
       session.step = "maxPrice";
 
-      reply =
-        "📦 المنتج: " + session.product + "\n\n" +
+      await sendTelegram(
+        token,
+        chatId,
+        "📦 المنتج: " +
+        session.product +
+        "\n\n" +
         "الآن أرسل أقصى سعر شراء تريده بالـ hryvnia (грн).\n\n" +
-        "مثال: 15000";
+        "مثال: 15000"
+      );
+
+      return {
+        statusCode: 200,
+        body: "OK"
+      };
     }
 
-    // Maximum purchase price
-    else if (session.step === "maxPrice") {
-      const price = Number(
-        text.replace(/[^\d.]/g, "")
-      );
+    // ==============================
+    // MAX PRICE
+    // ==============================
+
+    if (session.step === "maxPrice") {
+      const price = parseNumber(text);
 
       if (!price || price <= 0) {
-        reply =
-          "❌ أرسل سعرًا صحيحًا، مثال: 15000";
-      } else {
-        session.maxPrice = price;
-        session.step = "minProfit";
-
-        reply =
-          "💰 أقصى سعر شراء: " +
-          price +
-          " грн\n\n" +
-          "الآن أرسل أدنى ربح تريده بالـ hryvnia (грн).\n\n" +
-          "مثال: 3000";
-      }
-    }
-
-    // Minimum profit -> REAL SEARCH
-    else if (session.step === "minProfit") {
-      const profit = Number(
-        text.replace(/[^\d.]/g, "")
-      );
-
-      if (!profit || profit <= 0) {
-        reply =
-          "❌ أرسل ربحًا صحيحًا، مثال: 3000";
-      } else {
-        session.minProfit = profit;
-        session.step = "searching";
-
         await sendTelegram(
           token,
           chatId,
-          "⏳ بدأ البحث الحقيقي في OLX.ua...\n\n" +
-          "📦 المنتج: " +
-          session.product +
-          "\n" +
-          "💰 أقصى شراء: " +
-          session.maxPrice +
-          " грн\n" +
-          "📈 أدنى ربح: " +
-          session.minProfit +
-          " грн"
+          "❌ أرسل سعرًا صحيحًا، مثال: 15000"
         );
-
-        try {
-          const results = await searchOLX(
-            session.product,
-            session.maxPrice,
-            session.minProfit,
-            apifyToken
-          );
-
-          session.step = "ready";
-
-          await sendTelegram(
-            token,
-            chatId,
-            formatResults(session, results)
-          );
-
-        } catch (error) {
-          console.error(
-            "OLX SEARCH ERROR:",
-            error
-          );
-
-          session.step = "ready";
-
-          await sendTelegram(
-            token,
-            chatId,
-            "❌ حدث خطأ أثناء البحث في OLX.ua.\n\n" +
-            error.message
-          );
-        }
 
         return {
           statusCode: 200,
           body: "OK"
         };
       }
-    }
 
-    else {
-      reply =
-        "استخدم /search لبدء بحث جديد.";
-    }
+      session.maxPrice = price;
+      session.step = "minProfit";
 
-    if (reply) {
       await sendTelegram(
         token,
         chatId,
-        reply
+        "💰 أقصى سعر شراء: " +
+        price +
+        " грн\n\n" +
+        "الآن أرسل أدنى ربح تريده بالـ hryvnia (грн).\n\n" +
+        "مثال: 3000"
       );
+
+      return {
+        statusCode: 200,
+        body: "OK"
+      };
     }
+
+    // ==============================
+    // MIN PROFIT + SEARCH
+    // ==============================
+
+    if (session.step === "minProfit") {
+      const profit = parseNumber(text);
+
+      if (!profit || profit <= 0) {
+        await sendTelegram(
+          token,
+          chatId,
+          "❌ أرسل ربحًا صحيحًا، مثال: 3000"
+        );
+
+        return {
+          statusCode: 200,
+          body: "OK"
+        };
+      }
+
+      session.minProfit = profit;
+      session.step = "searching";
+
+      await sendTelegram(
+        token,
+        chatId,
+        "⏳ بدأ البحث الحقيقي في OLX.ua...\n\n" +
+        "📦 المنتج: " +
+        session.product +
+        "\n" +
+        "💰 أقصى شراء: " +
+        session.maxPrice +
+        " грн\n" +
+        "📈 أدنى ربح: " +
+        session.minProfit +
+        " грн"
+      );
+
+      try {
+        const results = await searchOLX(
+          session.product,
+          session.maxPrice,
+          session.minProfit,
+          apifyToken
+        );
+
+        session.step = "ready";
+
+        await sendTelegram(
+          token,
+          chatId,
+          formatResults(
+            session,
+            results
+          )
+        );
+
+      } catch (error) {
+        console.error(
+          "OLX SEARCH ERROR:",
+          error
+        );
+
+        session.step = "ready";
+
+        await sendTelegram(
+          token,
+          chatId,
+          "❌ حدث خطأ أثناء البحث.\n\n" +
+          error.message +
+          "\n\n" +
+          "استخدم /search لبدء بحث جديد."
+        );
+      }
+
+      return {
+        statusCode: 200,
+        body: "OK"
+      };
+    }
+
+    // ==============================
+    // FALLBACK
+    // ==============================
+
+    await sendTelegram(
+      token,
+      chatId,
+      "استخدم /search لبدء بحث جديد."
+    );
 
     return {
       statusCode: 200,
@@ -201,6 +247,20 @@ exports.handler = async (event) => {
     };
   }
 };
+
+
+// ========================================
+// RESET SESSION
+// ========================================
+
+function resetSession(chatId) {
+  sessions[chatId] = {
+    step: "idle",
+    product: "",
+    maxPrice: 0,
+    minProfit: 0
+  };
+}
 
 
 // ========================================
@@ -259,6 +319,12 @@ async function searchOLX(
     .filter(item =>
       item.price <= maxPrice
     )
+    .filter(item =>
+      isRelevantProduct(
+        item.title,
+        product
+      )
+    )
     .map(item => ({
       ...item,
       potentialProfit: minProfit,
@@ -270,7 +336,34 @@ async function searchOLX(
 
 
 // ========================================
-// NORMALIZE RESULT
+// PRODUCT RELEVANCE
+// ========================================
+
+function isRelevantProduct(
+  title,
+  product
+) {
+  const t =
+    String(title || "").toLowerCase();
+
+  const p =
+    String(product || "").toLowerCase();
+
+  const words =
+    p.split(/\s+/).filter(Boolean);
+
+  if (!words.length) {
+    return true;
+  }
+
+  return words.every(word =>
+    t.includes(word)
+  );
+}
+
+
+// ========================================
+// NORMALIZE
 // ========================================
 
 function normalizeListing(item) {
@@ -325,15 +418,57 @@ function extractPrice(value) {
   const cleaned =
     String(value)
       .replace(/[^\d.,]/g, "")
-      .replace(/\s/g, "")
-      .replace(",", ".");
+      .replace(/\s/g, "");
 
-  const number =
-    Number(cleaned);
+  if (!cleaned) {
+    return 0;
+  }
+
+  // Ukrainian-style decimal/comma handling
+  const parts =
+    cleaned.split(",");
+
+  let number;
+
+  if (parts.length > 1) {
+    const last =
+      parts[parts.length - 1];
+
+    if (last.length === 2) {
+      number =
+        Number(
+          parts
+            .slice(0, -1)
+            .join("") +
+          "." +
+          last
+        );
+    } else {
+      number =
+        Number(
+          parts.join("")
+        );
+    }
+  } else {
+    number =
+      Number(
+        cleaned.replace(/\./g, "")
+      );
+  }
 
   return Number.isFinite(number)
     ? number
     : 0;
+}
+
+
+function parseNumber(text) {
+  const value =
+    String(text)
+      .replace(/[^\d.,]/g, "")
+      .replace(",", ".");
+
+  return Number(value);
 }
 
 
@@ -384,7 +519,7 @@ function formatResults(
   if (!results.length) {
     return (
       "🔎 نتيجة البحث\n\n" +
-      "لم يجد الوكيل إعلانات ضمن أقصى سعر شراء المحدد.\n\n" +
+      "لم يجد الوكيل إعلانات مطابقة ضمن أقصى سعر شراء المحدد.\n\n" +
       "📦 المنتج: " +
       session.product +
       "\n" +
@@ -393,7 +528,8 @@ function formatResults(
       " грн\n" +
       "📈 أدنى ربح: " +
       session.minProfit +
-      " грн"
+      " грн\n\n" +
+      "استخدم /search لبحث جديد."
     );
   }
 
@@ -421,8 +557,8 @@ function formatResults(
       }
 
       message +=
-        `📈 الربح المطلوب: ${item.potentialProfit} грн\n` +
-        `💵 سعر البيع المطلوب: ${item.requiredSellingPrice} грн\n`;
+        `📈 الربح المستهدف: ${item.potentialProfit} грн\n` +
+        `💵 سعر البيع المستهدف: ${item.requiredSellingPrice} грн\n`;
 
       if (item.url) {
         message +=
@@ -431,6 +567,9 @@ function formatResults(
 
       message += "\n";
     });
+
+  message +=
+    "🔎 أرسل /search لبدء بحث جديد.";
 
   return message;
 }
