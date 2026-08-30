@@ -1,6 +1,6 @@
 const sessions = {};
 
-const APIFY_ACTOR = "maroon_trio~olx-ua-scraper-parser";
+const APIFY_ACTOR = "lowlanddata~olx-ua-scraper";
 
 const APIFY_URL =
   `https://api.apify.com/v2/acts/${APIFY_ACTOR}/run-sync-get-dataset-items`;
@@ -47,6 +47,7 @@ exports.handler = async (event) => {
 
     let reply = "";
 
+    // /start
     if (text === "/start") {
       session.step = "idle";
       session.product = "";
@@ -59,6 +60,7 @@ exports.handler = async (event) => {
         "استخدم /search لبدء البحث عن فرصة تجارية.";
     }
 
+    // /search
     else if (text === "/search") {
       session.step = "product";
       session.product = "";
@@ -72,6 +74,7 @@ exports.handler = async (event) => {
         "iPhone 14";
     }
 
+    // Product
     else if (session.step === "product") {
       session.product = text;
       session.step = "maxPrice";
@@ -82,6 +85,7 @@ exports.handler = async (event) => {
         "مثال: 15000";
     }
 
+    // Maximum purchase price
     else if (session.step === "maxPrice") {
       const price = Number(
         text.replace(/[^\d.]/g, "")
@@ -103,6 +107,7 @@ exports.handler = async (event) => {
       }
     }
 
+    // Minimum profit -> REAL SEARCH
     else if (session.step === "minProfit") {
       const profit = Number(
         text.replace(/[^\d.]/g, "")
@@ -140,9 +145,10 @@ exports.handler = async (event) => {
 
           session.step = "ready";
 
-          reply = formatResults(
-            session,
-            results
+          await sendTelegram(
+            token,
+            chatId,
+            formatResults(session, results)
           );
 
         } catch (error) {
@@ -153,11 +159,18 @@ exports.handler = async (event) => {
 
           session.step = "ready";
 
-          reply =
+          await sendTelegram(
+            token,
+            chatId,
             "❌ حدث خطأ أثناء البحث في OLX.ua.\n\n" +
-            "الخطأ:\n" +
-            error.message;
+            error.message
+          );
         }
+
+        return {
+          statusCode: 200,
+          body: "OK"
+        };
       }
     }
 
@@ -190,9 +203,9 @@ exports.handler = async (event) => {
 };
 
 
-/* =========================
-   OLX SEARCH
-========================= */
+// ========================================
+// APIFY SEARCH
+// ========================================
 
 async function searchOLX(
   product,
@@ -200,15 +213,6 @@ async function searchOLX(
   minProfit,
   apifyToken
 ) {
-  const searchUrl =
-    "https://www.olx.ua/uk/elektronika/telefony-i-aksesuary/mobilnye-telefony-smartfony/q-" +
-    encodeURIComponent(product.trim().toLowerCase()) +
-    "/";
-  console.log(
-    "OLX SEARCH URL:",
-    searchUrl
-  );
-
   const response = await fetch(
     APIFY_URL,
     {
@@ -221,7 +225,12 @@ async function searchOLX(
       },
 
       body: JSON.stringify({
-        url: searchUrl
+        searchQuery: product,
+        maxItems: 25,
+        sortBy: "date",
+        proxyConfiguration: {
+          useApifyProxy: true
+        }
       })
     }
   );
@@ -252,18 +261,17 @@ async function searchOLX(
     )
     .map(item => ({
       ...item,
+      potentialProfit: minProfit,
       requiredSellingPrice:
-        item.price + minProfit,
-      potentialProfit:
-        minProfit
+        item.price + minProfit
     }))
     .slice(0, 10);
 }
 
 
-/* =========================
-   NORMALIZE RESULT
-========================= */
+// ========================================
+// NORMALIZE RESULT
+// ========================================
 
 function normalizeListing(item) {
   const title =
@@ -301,9 +309,9 @@ function normalizeListing(item) {
 }
 
 
-/* =========================
-   PRICE
-========================= */
+// ========================================
+// PRICE
+// ========================================
 
 function extractPrice(value) {
   if (typeof value === "number") {
@@ -329,9 +337,9 @@ function extractPrice(value) {
 }
 
 
-/* =========================
-   TELEGRAM
-========================= */
+// ========================================
+// TELEGRAM
+// ========================================
 
 async function sendTelegram(
   token,
@@ -365,9 +373,9 @@ async function sendTelegram(
 }
 
 
-/* =========================
-   FORMAT RESULTS
-========================= */
+// ========================================
+// RESULTS
+// ========================================
 
 function formatResults(
   session,
@@ -393,7 +401,13 @@ function formatResults(
     "🔎 نتائج البحث الحقيقي في OLX.ua\n\n" +
     "📦 " +
     session.product +
-    "\n\n";
+    "\n" +
+    "💰 أقصى شراء: " +
+    session.maxPrice +
+    " грн\n" +
+    "📈 أدنى ربح: " +
+    session.minProfit +
+    " грн\n\n";
 
   results.forEach(
     (item, index) => {
@@ -408,7 +422,7 @@ function formatResults(
 
       message +=
         `📈 الربح المطلوب: ${item.potentialProfit} грн\n` +
-        `💵 سعر البيع المستهدف: ${item.requiredSellingPrice} грн\n`;
+        `💵 سعر البيع المطلوب: ${item.requiredSellingPrice} грн\n`;
 
       if (item.url) {
         message +=
