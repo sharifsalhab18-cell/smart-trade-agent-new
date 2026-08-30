@@ -201,10 +201,9 @@ async function searchOLX(
   apifyToken
 ) {
   const searchUrl =
-    "https://www.olx.ua/uk/list/q-" +
-    encodeURIComponent(product.trim()) +
+    "https://www.olx.ua/uk/elektronika/telefony-i-aksesuary/mobilnye-telefony-smartfony/q-" +
+    encodeURIComponent(product.trim().toLowerCase()) +
     "/";
-
   console.log(
     "OLX SEARCH URL:",
     searchUrl
