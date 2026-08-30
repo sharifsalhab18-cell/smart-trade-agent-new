@@ -1,7 +1,7 @@
 const sessions = {};
 
-const APIFY_ACTOR = "lowlanddata~olx-ua-scraper";
-
+const APIFY_ACTOR = 
+heady_impediment~olx-ua-scraper
 const APIFY_URL =
   `https://api.apify.com/v2/acts/${APIFY_ACTOR}/run-sync-get-dataset-items`;
 
