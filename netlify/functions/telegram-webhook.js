@@ -316,15 +316,6 @@ async function searchOLX(
   return data
     .map(normalizeListing)
     .filter(item => item.price > 0)
-    .filter(item =>
-      item.price <= maxPrice
-    )
-    .filter(item =>
-      isRelevantProduct(
-        item.title,
-        product
-      )
-    )
     .map(item => ({
       ...item,
       potentialProfit: minProfit,
