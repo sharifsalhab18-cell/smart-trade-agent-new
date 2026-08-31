@@ -1,9 +1,7 @@
 const sessions = {};
 
-const APIFY_ACTOR =
-  "heady_impediment~olx-ua-scraper";
 const APIFY_URL =
-  `https://api.apify.com/v2/acts/${APIFY_ACTOR}/run-sync-get-dataset-items`;
+  "https://api.apify.com/v2/acts/lowlanddata~olx-ua-scraper/run-sync-get-dataset-items";
 
 exports.handler = async (event) => {
   try {
@@ -20,10 +18,17 @@ exports.handler = async (event) => {
     const token = process.env.TELEGRAM_BOT_TOKEN;
     const apifyToken = process.env.APIFY_API_TOKEN;
 
-    if (!token || !apifyToken) {
+    if (!token) {
       return {
         statusCode: 500,
-        body: "Required environment variable is missing"
+        body: "TELEGRAM_BOT_TOKEN is not configured"
+      };
+    }
+
+    if (!apifyToken) {
+      return {
+        statusCode: 500,
+        body: "APIFY_API_TOKEN is not configured"
       };
     }
 
@@ -33,9 +38,9 @@ exports.handler = async (event) => {
 
     const session = sessions[chatId];
 
-    // ==============================
+    // =========================
     // START
-    // ==============================
+    // =========================
 
     if (text === "/start") {
       resetSession(chatId);
@@ -48,15 +53,12 @@ exports.handler = async (event) => {
         "استخدم /search لبدء البحث."
       );
 
-      return {
-        statusCode: 200,
-        body: "OK"
-      };
+      return ok();
     }
 
-    // ==============================
-    // NEW SEARCH
-    // ==============================
+    // =========================
+    // SEARCH
+    // =========================
 
     if (text === "/search") {
       resetSession(chatId);
@@ -70,15 +72,12 @@ exports.handler = async (event) => {
         "iPhone 14"
       );
 
-      return {
-        statusCode: 200,
-        body: "OK"
-      };
+      return ok();
     }
 
-    // ==============================
+    // =========================
     // PRODUCT
-    // ==============================
+    // =========================
 
     if (
       session.step === "idle" ||
@@ -93,22 +92,19 @@ exports.handler = async (event) => {
         "📦 المنتج: " +
         session.product +
         "\n\n" +
-        "الآن أرسل أقصى سعر شراء تريده بالـ hryvnia (грн).\n\n" +
+        "الآن أرسل أقصى سعر شراء بالـ hryvnia (грн).\n\n" +
         "مثال: 15000"
       );
 
-      return {
-        statusCode: 200,
-        body: "OK"
-      };
+      return ok();
     }
 
-    // ==============================
+    // =========================
     // MAX PRICE
-    // ==============================
+    // =========================
 
     if (session.step === "maxPrice") {
-      const price = parseNumber(text);
+      const price = parseInteger(text);
 
       if (!price || price <= 0) {
         await sendTelegram(
@@ -117,10 +113,7 @@ exports.handler = async (event) => {
           "❌ أرسل سعرًا صحيحًا، مثال: 15000"
         );
 
-        return {
-          statusCode: 200,
-          body: "OK"
-        };
+        return ok();
       }
 
       session.maxPrice = price;
@@ -136,18 +129,15 @@ exports.handler = async (event) => {
         "مثال: 3000"
       );
 
-      return {
-        statusCode: 200,
-        body: "OK"
-      };
+      return ok();
     }
 
-    // ==============================
-    // MIN PROFIT + SEARCH
-    // ==============================
+    // =========================
+    // MIN PROFIT
+    // =========================
 
     if (session.step === "minProfit") {
-      const profit = parseNumber(text);
+      const profit = parseInteger(text);
 
       if (!profit || profit <= 0) {
         await sendTelegram(
@@ -156,10 +146,7 @@ exports.handler = async (event) => {
           "❌ أرسل ربحًا صحيحًا، مثال: 3000"
         );
 
-        return {
-          statusCode: 200,
-          body: "OK"
-        };
+        return ok();
       }
 
       session.minProfit = profit;
@@ -193,10 +180,7 @@ exports.handler = async (event) => {
         await sendTelegram(
           token,
           chatId,
-          formatResults(
-            session,
-            results
-          )
+          formatResults(session, results)
         );
 
       } catch (error) {
@@ -210,36 +194,20 @@ exports.handler = async (event) => {
         await sendTelegram(
           token,
           chatId,
-          "❌ حدث خطأ أثناء البحث.\n\n" +
+          "❌ حدث خطأ أثناء البحث في OLX.ua.\n\n" +
           error.message +
           "\n\n" +
-          "استخدم /search لبدء بحث جديد."
+          "استخدم /search لبحث جديد."
         );
       }
 
-      return {
-        statusCode: 200,
-        body: "OK"
-      };
+      return ok();
     }
 
-    // ==============================
-    // FALLBACK
-    // ==============================
-
-    await sendTelegram(
-      token,
-      chatId,
-      "استخدم /search لبدء بحث جديد."
-    );
-
-    return {
-      statusCode: 200,
-      body: "OK"
-    };
+    return ok();
 
   } catch (error) {
-    console.error(error);
+    console.error("FUNCTION ERROR:", error);
 
     return {
       statusCode: 500,
@@ -249,23 +217,9 @@ exports.handler = async (event) => {
 };
 
 
-// ========================================
-// RESET SESSION
-// ========================================
-
-function resetSession(chatId) {
-  sessions[chatId] = {
-    step: "idle",
-    product: "",
-    maxPrice: 0,
-    minProfit: 0
-  };
-}
-
-
-// ========================================
-// APIFY SEARCH
-// ========================================
+// ======================================
+// APIFY
+// ======================================
 
 async function searchOLX(
   product,
@@ -273,81 +227,170 @@ async function searchOLX(
   minProfit,
   apifyToken
 ) {
+  /*
+   * Lowland Data expects priceMax in UAH.
+   * Output priceKop is in kopiykas.
+   */
+
+  const input = {
+    searchQuery: product,
+    priceMax: maxPrice,
+    sortBy: "date",
+    maxItems: 25,
+    proxyConfiguration: {
+      useApifyProxy: true
+    }
+  };
+
+  console.log(
+    "APIFY INPUT:",
+    JSON.stringify(input)
+  );
+
   const response = await fetch(
-    APIFY_URL,
+    APIFY_URL +
+    "?token=" +
+    encodeURIComponent(apifyToken),
     {
       method: "POST",
 
       headers: {
-        "Content-Type": "application/json",
-        "Authorization":
-          `Bearer ${apifyToken}`
+        "Content-Type": "application/json"
       },
-body: JSON.stringify({
-  startUrls: [
-    {
-      url:
-        "https://www.olx.ua/uk/elektronika/telefony-i-aksesuary/mobilnye-telefony-smartfony/q-" +
-        encodeURIComponent(product.trim().toLowerCase()) +
-        "/"
-    }
-  ],
-  maxItems: 25,
-  proxyConfiguration: {
-    useApifyProxy: true
-  }
-})
-      
+
+      body: JSON.stringify(input)
     }
   );
 
-  if (!response.ok) {
-    const errorText =
-      await response.text();
+  const responseText =
+    await response.text();
 
+  if (!response.ok) {
     throw new Error(
-      `Apify HTTP ${response.status}: ${errorText}`
+      `Apify HTTP ${response.status}: ${responseText}`
     );
   }
 
-  const data =
-    await response.json();
+  let data;
+
+  try {
+    data = JSON.parse(responseText);
+  } catch {
+    throw new Error(
+      "Apify returned invalid JSON."
+    );
+  }
 
   if (!Array.isArray(data)) {
     throw new Error(
-      "Apify returned an unexpected response."
+      "Apify returned an unexpected dataset format."
     );
   }
+
+  console.log(
+    "APIFY ITEMS:",
+    data.length
+  );
 
   return data
     .map(normalizeListing)
     .filter(item => item.price > 0)
+    .filter(item =>
+      item.price <= maxPrice
+    )
+    .filter(item =>
+      isRelevantProduct(
+        item.title,
+        product
+      )
+    )
     .map(item => ({
       ...item,
-      potentialProfit: minProfit,
       requiredSellingPrice:
-        item.price + minProfit
+        item.price + minProfit,
+      potentialProfit:
+        minProfit
     }))
     .slice(0, 10);
 }
 
 
-// ========================================
-// PRODUCT RELEVANCE
-// ========================================
+// ======================================
+// NORMALIZE LOWLAND RESULT
+// ======================================
+
+function normalizeListing(item) {
+  const title =
+    item.title ||
+    "بدون عنوان";
+
+  /*
+   * Lowland Data returns:
+   * priceKop = price in 1/100 UAH
+   *
+   * Example:
+   * 500000 = 5000 UAH
+   */
+
+  let price = 0;
+
+  if (
+    typeof item.priceKop === "number"
+  ) {
+    price = item.priceKop / 100;
+  } else if (
+    typeof item.price === "number"
+  ) {
+    price = item.price;
+  } else if (
+    item.price
+  ) {
+    price = parseInteger(
+      item.price
+    );
+  }
+
+  return {
+    title,
+    price,
+    city:
+      item.city ||
+      "",
+    region:
+      item.region ||
+      "",
+    url:
+      item.url ||
+      ""
+  };
+}
+
+
+// ======================================
+// PRODUCT MATCH
+// ======================================
 
 function isRelevantProduct(
   title,
   product
 ) {
   const t =
-    String(title || "").toLowerCase();
+    String(title || "")
+      .toLowerCase();
 
   const p =
-    String(product || "").toLowerCase();
+    String(product || "")
+      .toLowerCase()
+      .trim();
+
+  /*
+   * For iPhone searches, require
+   * both "iphone" and the model number.
+   */
 
   const words =
-    p.split(/\s+/).filter(Boolean);
+    p.split(/\s+/)
+      .filter(Boolean);
 
   if (!words.length) {
     return true;
@@ -359,119 +402,31 @@ function isRelevantProduct(
 }
 
 
-// ========================================
-// NORMALIZE
-// ========================================
+// ======================================
+// NUMBER
+// ======================================
 
-function normalizeListing(item) {
-  const title =
-    item.title ||
-    item.name ||
-    item.heading ||
-    "بدون عنوان";
-
-  const price =
-    extractPrice(
-      item.price ||
-      item.priceValue ||
-      item.cost
-    );
-
-  const location =
-    item.location ||
-    item.city ||
-    item.region ||
-    "";
-
-  const url =
-    item.url ||
-    item.link ||
-    item.adUrl ||
-    item.href ||
-    "";
-
-  return {
-    title,
-    price,
-    location,
-    url
-  };
-}
-
-
-// ========================================
-// PRICE
-// ========================================
-
-function extractPrice(value) {
-  if (typeof value === "number") {
-    return value;
-  }
-
-  if (!value) {
-    return 0;
-  }
-
+function parseInteger(text) {
   const cleaned =
-    String(value)
-      .replace(/[^\d.,]/g, "")
-      .replace(/\s/g, "");
+    String(text)
+      .replace(/[^\d]/g, "");
 
   if (!cleaned) {
     return 0;
   }
 
-  // Ukrainian-style decimal/comma handling
-  const parts =
-    cleaned.split(",");
+  const value =
+    Number(cleaned);
 
-  let number;
-
-  if (parts.length > 1) {
-    const last =
-      parts[parts.length - 1];
-
-    if (last.length === 2) {
-      number =
-        Number(
-          parts
-            .slice(0, -1)
-            .join("") +
-          "." +
-          last
-        );
-    } else {
-      number =
-        Number(
-          parts.join("")
-        );
-    }
-  } else {
-    number =
-      Number(
-        cleaned.replace(/\./g, "")
-      );
-  }
-
-  return Number.isFinite(number)
-    ? number
+  return Number.isFinite(value)
+    ? value
     : 0;
 }
 
 
-function parseNumber(text) {
-  const value =
-    String(text)
-      .replace(/[^\d.,]/g, "")
-      .replace(",", ".");
-
-  return Number(value);
-}
-
-
-// ========================================
+// ======================================
 // TELEGRAM
-// ========================================
+// ======================================
 
 async function sendTelegram(
   token,
@@ -498,16 +453,30 @@ async function sendTelegram(
 
   if (!response.ok) {
     console.error(
-      "Telegram error:",
+      "TELEGRAM ERROR:",
       await response.text()
     );
   }
 }
 
 
-// ========================================
-// RESULTS
-// ========================================
+// ======================================
+// SESSION
+// ======================================
+
+function resetSession(chatId) {
+  sessions[chatId] = {
+    step: "idle",
+    product: "",
+    maxPrice: 0,
+    minProfit: 0
+  };
+}
+
+
+// ======================================
+// RESPONSE
+// ======================================
 
 function formatResults(
   session,
@@ -532,7 +501,7 @@ function formatResults(
 
   let message =
     "🔎 نتائج البحث الحقيقي في OLX.ua\n\n" +
-    "📦 " +
+    "📦 المنتج: " +
     session.product +
     "\n" +
     "💰 أقصى شراء: " +
@@ -546,16 +515,23 @@ function formatResults(
     (item, index) => {
       message +=
         `${index + 1}. ${item.title}\n` +
-        `💰 السعر: ${item.price} грн\n`;
+        `💰 السعر: ${formatPrice(item.price)} грн\n`;
 
-      if (item.location) {
+      if (item.city) {
         message +=
-          `📍 ${item.location}\n`;
+          `📍 ${item.city}`;
+
+        if (item.region) {
+          message +=
+            `، ${item.region}`;
+        }
+
+        message += "\n";
       }
 
       message +=
-        `📈 الربح المستهدف: ${item.potentialProfit} грн\n` +
-        `💵 سعر البيع المستهدف: ${item.requiredSellingPrice} грн\n`;
+        `📈 الربح المطلوب: ${formatPrice(item.potentialProfit)} грн\n` +
+        `💵 سعر البيع المطلوب: ${formatPrice(item.requiredSellingPrice)} грн\n`;
 
       if (item.url) {
         message +=
@@ -563,10 +539,27 @@ function formatResults(
       }
 
       message += "\n";
-    });
+    }
+  );
 
   message +=
-    "🔎 أرسل /search لبدء بحث جديد.";
+    "استخدم /search لبحث جديد.";
 
   return message;
+}
+
+
+function formatPrice(value) {
+  return Number(value)
+    .toLocaleString("en-US", {
+      maximumFractionDigits: 0
+    });
+}
+
+
+function ok() {
+  return {
+    statusCode: 200,
+    body: "OK"
+  };
 }
