@@ -692,11 +692,151 @@ function normalizeListing(item) {
 // ======================================
 // PRODUCT MATCH
 // ======================================
+function isRelevantProduct(title, product) {
+  const t =
+    String(title || "")
+      .toLowerCase()
+      .trim();
 
-function isRelevantProduct(
-  title,
-  product
-) {
+  const p =
+    String(product || "")
+      .toLowerCase()
+      .trim();
+
+  if (!p) {
+    return true;
+  }
+
+  // ======================================
+  // كلمات تستبعد الإكسسوارات وقطع الغيار
+  // ======================================
+
+  const excludedWords = [
+    "чохол",
+    "чехол",
+    "case",
+    "кабель",
+    "кабели",
+    "кабель для",
+    "скло",
+    "стекло",
+    "захисне скло",
+    "защитное стекло",
+    "дисплей",
+    "дисплейный",
+    "екран",
+    "экран",
+    "корпус",
+    "корпус на",
+    "крышка",
+    "задняя крышка",
+    "акумулятор",
+    "батарея",
+    "battery",
+    "зарядка",
+    "зарядное",
+    "блок живлення",
+    "наушники",
+    "навушники",
+    "держатель",
+    "тримач",
+    "пленка",
+    "плівка",
+    "стекло защитное",
+    "запчасть",
+    "запчасти",
+    "запчастина",
+    "запчастини"
+  ];
+
+  const isAccessory =
+    excludedWords.some(
+      word => t.includes(word)
+    );
+
+  if (isAccessory) {
+    return false;
+  }
+
+  // ======================================
+  // iPhone
+  // ======================================
+
+  if (
+    p.includes("iphone") ||
+    p.includes("айфон")
+  ) {
+
+    // يجب أن يحتوي العنوان على iPhone
+    const hasIphone =
+      t.includes("iphone") ||
+      t.includes("айфон");
+
+    if (!hasIphone) {
+      return false;
+    }
+
+    // استخراج موديل iPhone من طلب المستخدم
+    const modelMatch =
+      p.match(
+        /(?:iphone|айфон)\s*(\d{1,2})/i
+      );
+
+    if (modelMatch) {
+
+      const requestedModel =
+        modelMatch[1];
+
+      /*
+       * نقبل الموديل المطلوب فقط.
+       *
+       * مثال:
+       * iPhone 14
+       *
+       * يقبل:
+       * iPhone 14
+       * Apple iPhone 14 128GB
+       *
+       * ويرفض:
+       * iPhone 13
+       * iPhone XR
+       * iPhone 15
+       */
+
+      const modelRegex =
+        new RegExp(
+          "(?:iphone|айфон)\\s*" +
+          requestedModel +
+          "(?:\\D|$)",
+          "i"
+        );
+
+      if (
+        !modelRegex.test(t)
+      ) {
+        return false;
+      }
+    }
+  }
+
+  // ======================================
+  // باقي المنتجات
+  // ======================================
+
+  const words =
+    p.split(/\s+/)
+      .filter(Boolean);
+
+  if (!words.length) {
+    return true;
+  }
+
+  return words.every(
+    word =>
+      t.includes(word)
+  );
+}
+
 
   const t =
     String(title || "")
