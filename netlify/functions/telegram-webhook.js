@@ -838,29 +838,7 @@ function isRelevantProduct(title, product) {
 }
 
 
-  const t =
-    String(title || "")
-      .toLowerCase();
-
-  const p =
-    String(product || "")
-      .toLowerCase()
-      .trim();
-
-  const words =
-    p.split(/\s+/)
-      .filter(Boolean);
-
-  if (!words.length) {
-    return true;
-  }
-
-  return words.every(
-    word =>
-      t.includes(word)
-  );
-}
-
+  
 
 // ======================================
 // NUMBER
