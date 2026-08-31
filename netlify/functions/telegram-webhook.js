@@ -37,7 +37,55 @@ exports.handler = async (event) => {
     }
 
     const session = sessions[chatId];
+// =========================
+// SELECT DEAL
+// =========================
 
+if (session.step === "selectDeal") {
+  const number = parseInteger(text);
+
+  if (
+    !number ||
+    !session.results ||
+    !session.results[number - 1]
+  ) {
+    await sendTelegram(
+      token,
+      chatId,
+      "❌ أرسل رقم صفقة صحيح من القائمة."
+    );
+
+    return ok();
+  }
+
+  session.selectedDeal =
+    session.results[number - 1];
+
+  session.step = "ready";
+
+  await sendTelegram(
+    token,
+    chatId,
+    "✅ تم اختيار الصفقة رقم " +
+    number +
+    "\n\n" +
+    "📦 " +
+    session.selectedDeal.title +
+    "\n" +
+    "💰 سعر الشراء: " +
+    formatPrice(session.selectedDeal.price) +
+    " грн\n" +
+    "📈 الربح: " +
+    formatPrice(session.selectedDeal.potentialProfit) +
+    " грн\n" +
+    "💵 سعر البيع: " +
+    formatPrice(session.selectedDeal.requiredSellingPrice) +
+    " грн\n\n" +
+    "🤝 أرسل /buyers للبحث عن زبون لهذه الصفقة."
+  );
+
+  return ok();
+}
     // =========================
     // START
     // =========================
@@ -260,8 +308,8 @@ exports.handler = async (event) => {
             apifyToken
           );
 
-        session.step = "ready";
-
+        session.results = results;
+session.step = "selectDeal";
         if (results.length) {
 
           session.bestDeal =
