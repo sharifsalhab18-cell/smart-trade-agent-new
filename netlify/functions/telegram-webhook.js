@@ -370,19 +370,6 @@ function normalizeListing(item) {
 // PRODUCT MATCH
 // ======================================
 function isRelevantProduct(title, product) {
-  const words = p
-    .split(/\s+/)
-    .filter(Boolean);
-
-  return words.every(word =>
-    t.includes(word)
-  );
-}
-
-
-// ======================================
-// NUMBER
-// ======================================
   const t =
     String(title || "")
       .toLowerCase();
@@ -409,7 +396,6 @@ function isRelevantProduct(title, product) {
     t.includes(word)
   );
 }
-
 
 // ======================================
 // NUMBER
