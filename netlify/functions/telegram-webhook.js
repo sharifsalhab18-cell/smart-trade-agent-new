@@ -369,11 +369,81 @@ function normalizeListing(item) {
 // ======================================
 // PRODUCT MATCH
 // ======================================
+function isRelevantProduct(title, product) {
+  const t = String(title || "").toLowerCase();
+  const p = String(product || "").toLowerCase().trim();
 
-function isRelevantProduct(
-  title,
-  product
-) {
+  // كلمات تدل على أن الإعلان ليس هاتفًا
+  const excludedWords = [
+    "чохол",
+    "чехол",
+    "case",
+    "дисплей",
+    "экран",
+    "екран",
+    "скло",
+    "стекло",
+    "захисне скло",
+    "защитное стекло",
+    "зарядка",
+    "зарядний",
+    "зарядное",
+    "кабель",
+    "кабелі",
+    "аксесуар",
+    "аксесуари",
+    "запчастина",
+    "запчастини",
+    "модуль",
+    "плівка",
+    "пленка",
+    "ремонт"
+  ];
+
+  // استبعاد الإكسسوارات وقطع الغيار
+  for (const word of excludedWords) {
+    if (t.includes(word)) {
+      return false;
+    }
+  }
+
+  // البحث عن iPhone
+  if (p.includes("iphone")) {
+    if (!t.includes("iphone")) {
+      return false;
+    }
+
+    // استخراج رقم الموديل من طلب البحث
+    const modelMatch = p.match(/\b(1[0-9]|[0-9])\b/);
+
+    if (modelMatch) {
+      const model = modelMatch[1];
+
+      // يجب أن يظهر رقم الموديل في العنوان
+      const modelRegex = new RegExp(
+        "\\biphone\\s*" + model + "\\b",
+        "i"
+      );
+
+      if (!modelRegex.test(t)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  // للمنتجات الأخرى:
+  // يجب أن تظهر كلمات البحث الأساسية في العنوان
+  const words = p
+    .split(/\s+/)
+    .filter(Boolean);
+
+  return words.every(word =>
+    t.includes(word)
+  );
+}
+
   const t =
     String(title || "")
       .toLowerCase();
