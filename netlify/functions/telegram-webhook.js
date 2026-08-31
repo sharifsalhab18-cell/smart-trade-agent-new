@@ -76,6 +76,78 @@ exports.handler = async (event) => {
     }
 
     // =========================
+    // BUYER SEARCH
+    // =========================
+
+    if (text === "/buyers") {
+
+      if (!session.product) {
+        await sendTelegram(
+          token,
+          chatId,
+          "❌ لا توجد صفقة محفوظة.\n\n" +
+          "استخدم /search أولًا."
+        );
+
+        return ok();
+      }
+
+      session.step = "findingBuyers";
+
+      await sendTelegram(
+        token,
+        chatId,
+        "🔎 البحث عن زبائن محتملين...\n\n" +
+        "📦 المنتج: " +
+        session.product +
+        "\n" +
+        "💵 سعر البيع المقترح: " +
+        formatPrice(
+          session.bestSellingPrice || 0
+        ) +
+        " грн\n\n" +
+        "⏳ يبحث الوكيل في الإعلانات العامة..."
+      );
+
+      try {
+        const buyers =
+          await searchPotentialBuyers(
+            session.product,
+            apifyToken
+          );
+
+        session.step = "ready";
+
+        await sendTelegram(
+          token,
+          chatId,
+          formatBuyerResults(
+            session,
+            buyers
+          )
+        );
+
+      } catch (error) {
+
+        console.error(
+          "BUYER SEARCH ERROR:",
+          error
+        );
+
+        session.step = "ready";
+
+        await sendTelegram(
+          token,
+          chatId,
+          "❌ حدث خطأ أثناء البحث عن الزبائن.\n\n" +
+          error.message
+        );
+      }
+
+      return ok();
+    }
+
+    // =========================
     // PRODUCT
     // =========================
 
@@ -104,6 +176,7 @@ exports.handler = async (event) => {
     // =========================
 
     if (session.step === "maxPrice") {
+
       const price = parseInteger(text);
 
       if (!price || price <= 0) {
@@ -123,33 +196,43 @@ exports.handler = async (event) => {
         token,
         chatId,
         "💰 أقصى سعر شراء: " +
-        price +
+        formatPrice(price) +
         " грн\n\n" +
-        "الآن أرسل أدنى ربح تريده بالـ hryvnia (грн).\n\n" +
-        "مثال: 3000"
+        "الآن أرسل نسبة الربح المطلوبة.\n\n" +
+        "النسبة يجب أن تكون بين 15% و20%.\n\n" +
+        "مثال: 15"
       );
 
       return ok();
     }
 
     // =========================
-    // MIN PROFIT
+    // PROFIT PERCENTAGE
     // =========================
 
     if (session.step === "minProfit") {
-      const profit = parseInteger(text);
 
-      if (!profit || profit <= 0) {
+      const profitPercent =
+        parseInteger(text);
+
+      if (
+        !profitPercent ||
+        profitPercent < 15 ||
+        profitPercent > 20
+      ) {
         await sendTelegram(
           token,
           chatId,
-          "❌ أرسل ربحًا صحيحًا، مثال: 3000"
+          "❌ أرسل نسبة صحيحة بين 15% و20%.\n\n" +
+          "مثال: 15"
         );
 
         return ok();
       }
 
-      session.minProfit = profit;
+      session.profitPercent =
+        profitPercent;
+
       session.step = "searching";
 
       await sendTelegram(
@@ -160,30 +243,48 @@ exports.handler = async (event) => {
         session.product +
         "\n" +
         "💰 أقصى شراء: " +
-        session.maxPrice +
+        formatPrice(session.maxPrice) +
         " грн\n" +
-        "📈 أدنى ربح: " +
-        session.minProfit +
-        " грн"
+        "📈 نسبة الربح: " +
+        session.profitPercent +
+        "%"
       );
 
       try {
-        const results = await searchOLX(
-          session.product,
-          session.maxPrice,
-          session.minProfit,
-          apifyToken
-        );
+
+        const results =
+          await searchOLX(
+            session.product,
+            session.maxPrice,
+            session.profitPercent,
+            apifyToken
+          );
 
         session.step = "ready";
+
+        if (results.length) {
+
+          session.bestDeal =
+            results[0];
+
+          session.bestSellingPrice =
+            results[0].requiredSellingPrice;
+
+          session.lastResults =
+            results;
+        }
 
         await sendTelegram(
           token,
           chatId,
-          formatResults(session, results)
+          formatResults(
+            session,
+            results
+          )
         );
 
       } catch (error) {
+
         console.error(
           "OLX SEARCH ERROR:",
           error
@@ -207,7 +308,11 @@ exports.handler = async (event) => {
     return ok();
 
   } catch (error) {
-    console.error("FUNCTION ERROR:", error);
+
+    console.error(
+      "FUNCTION ERROR:",
+      error
+    );
 
     return {
       statusCode: 500,
@@ -218,25 +323,26 @@ exports.handler = async (event) => {
 
 
 // ======================================
-// APIFY
+// SEARCH OLX
 // ======================================
 
 async function searchOLX(
   product,
   maxPrice,
-  minProfit,
+  profitPercent,
   apifyToken
 ) {
-  /*
-   * Lowland Data expects priceMax in UAH.
-   * Output priceKop is in kopiykas.
-   */
 
   const input = {
+
     searchQuery: product,
+
     priceMax: maxPrice,
+
     sortBy: "date",
+
     maxItems: 25,
+
     proxyConfiguration: {
       useApifyProxy: true
     }
@@ -247,25 +353,31 @@ async function searchOLX(
     JSON.stringify(input)
   );
 
-  const response = await fetch(
-    APIFY_URL +
-    "?token=" +
-    encodeURIComponent(apifyToken),
-    {
-      method: "POST",
+  const response =
+    await fetch(
+      APIFY_URL +
+      "?token=" +
+      encodeURIComponent(
+        apifyToken
+      ),
+      {
+        method: "POST",
 
-      headers: {
-        "Content-Type": "application/json"
-      },
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
 
-      body: JSON.stringify(input)
-    }
-  );
+        body:
+          JSON.stringify(input)
+      }
+    );
 
   const responseText =
     await response.text();
 
   if (!response.ok) {
+
     throw new Error(
       `Apify HTTP ${response.status}: ${responseText}`
     );
@@ -274,14 +386,19 @@ async function searchOLX(
   let data;
 
   try {
-    data = JSON.parse(responseText);
+
+    data =
+      JSON.parse(responseText);
+
   } catch {
+
     throw new Error(
       "Apify returned invalid JSON."
     );
   }
 
   if (!Array.isArray(data)) {
+
     throw new Error(
       "Apify returned an unexpected dataset format."
     );
@@ -293,72 +410,278 @@ async function searchOLX(
   );
 
   return data
+
     .map(normalizeListing)
-    .filter(item => item.price > 0)
-    .filter(item =>
-      item.price <= maxPrice
+
+    .filter(
+      item => item.price > 0
     )
-    .filter(item =>
-      isRelevantProduct(
-        item.title,
-        product
-      )
+
+    .filter(
+      item =>
+        item.price <= maxPrice
     )
-    .map(item => ({
-      ...item,
-      requiredSellingPrice:
-        item.price + minProfit,
-      potentialProfit:
-        minProfit
-    }))
+
+    .filter(
+      item =>
+        isRelevantProduct(
+          item.title,
+          product
+        )
+    )
+
+    .map(item => {
+
+      const potentialProfit =
+        Math.round(
+          item.price *
+          profitPercent /
+          100
+        );
+
+      const requiredSellingPrice =
+        item.price +
+        potentialProfit;
+
+      return {
+
+        ...item,
+
+        potentialProfit,
+
+        requiredSellingPrice,
+
+        profitPercent
+      };
+    })
+
+    .sort(
+      (a, b) =>
+        a.price - b.price
+    )
+
     .slice(0, 10);
 }
 
 
 // ======================================
-// NORMALIZE LOWLAND RESULT
+// FIND POTENTIAL BUYERS
+// ======================================
+
+async function searchPotentialBuyers(
+  product,
+  apifyToken
+) {
+
+  /*
+   * مهم:
+   * هذا يبحث عن إعلانات عامة تحتوي
+   * على مؤشرات مثل "куплю" أو "ищу".
+   *
+   * لا يتم استخراج أرقام هواتف أو
+   * بيانات شخصية.
+   */
+
+  const buyerQuery =
+    `${product} куплю`;
+
+  const input = {
+
+    searchQuery:
+      buyerQuery,
+
+    sortBy: "date",
+
+    maxItems: 25,
+
+    proxyConfiguration: {
+      useApifyProxy: true
+    }
+  };
+
+  console.log(
+    "BUYER APIFY INPUT:",
+    JSON.stringify(input)
+  );
+
+  const response =
+    await fetch(
+      APIFY_URL +
+      "?token=" +
+      encodeURIComponent(
+        apifyToken
+      ),
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
+
+        body:
+          JSON.stringify(input)
+      }
+    );
+
+  const responseText =
+    await response.text();
+
+  if (!response.ok) {
+
+    throw new Error(
+      `Apify buyer search HTTP ${response.status}: ${responseText}`
+    );
+  }
+
+  let data;
+
+  try {
+
+    data =
+      JSON.parse(responseText);
+
+  } catch {
+
+    throw new Error(
+      "Buyer search returned invalid JSON."
+    );
+  }
+
+  if (!Array.isArray(data)) {
+
+    throw new Error(
+      "Buyer search returned unexpected data."
+    );
+  }
+
+  return data
+
+    .map(normalizeListing)
+
+    .filter(
+      item =>
+        isPotentialBuyer(
+          item,
+          product
+        )
+    )
+
+    .slice(0, 10);
+}
+
+
+// ======================================
+// BUYER MATCH
+// ======================================
+
+function isPotentialBuyer(
+  item,
+  product
+) {
+
+  const text =
+    (
+      String(item.title || "") +
+      " " +
+      String(item.description || "")
+    )
+      .toLowerCase();
+
+  const productWords =
+    String(product || "")
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean);
+
+  const buyerWords = [
+
+    "куплю",
+    "купить",
+    "ищу",
+    "потрібен",
+    "потрібна",
+    "потрібно",
+    "хочу купити",
+    "шукаю"
+  ];
+
+  const hasBuyerIntent =
+    buyerWords.some(
+      word =>
+        text.includes(word)
+    );
+
+  const hasProduct =
+    productWords.length === 0 ||
+    productWords.some(
+      word =>
+        text.includes(word)
+    );
+
+  return (
+    hasBuyerIntent &&
+    hasProduct
+  );
+}
+
+
+// ======================================
+// NORMALIZE LISTING
 // ======================================
 
 function normalizeListing(item) {
+
   const title =
     item.title ||
     "بدون عنوان";
 
-  /*
-   * Lowland Data returns:
-   * priceKop = price in 1/100 UAH
-   *
-   * Example:
-   * 500000 = 5000 UAH
-   */
-
   let price = 0;
 
   if (
-    typeof item.priceKop === "number"
+    typeof item.priceKop ===
+    "number"
   ) {
-    price = item.priceKop / 100;
+
+    price =
+      item.priceKop / 100;
+
   } else if (
-    typeof item.price === "number"
+    typeof item.price ===
+    "number"
   ) {
-    price = item.price;
+
+    price =
+      item.price;
+
   } else if (
     item.price
   ) {
-    price = parseInteger(
-      item.price
-    );
+
+    price =
+      parseInteger(
+        item.price
+      );
   }
 
   return {
+
     title,
+
+    description:
+      item.description ||
+      "",
+
     price,
+
     city:
       item.city ||
       "",
+
     region:
       item.region ||
       "",
+
     url:
       item.url ||
       ""
@@ -369,7 +692,12 @@ function normalizeListing(item) {
 // ======================================
 // PRODUCT MATCH
 // ======================================
-function isRelevantProduct(title, product) {
+
+function isRelevantProduct(
+  title,
+  product
+) {
+
   const t =
     String(title || "")
       .toLowerCase();
@@ -379,11 +707,6 @@ function isRelevantProduct(title, product) {
       .toLowerCase()
       .trim();
 
-  /*
-   * For iPhone searches, require
-   * both "iphone" and the model number.
-   */
-
   const words =
     p.split(/\s+/)
       .filter(Boolean);
@@ -392,16 +715,19 @@ function isRelevantProduct(title, product) {
     return true;
   }
 
-  return words.every(word =>
-    t.includes(word)
+  return words.every(
+    word =>
+      t.includes(word)
   );
 }
+
 
 // ======================================
 // NUMBER
 // ======================================
 
 function parseInteger(text) {
+
   const cleaned =
     String(text)
       .replace(/[^\d]/g, "");
@@ -428,6 +754,7 @@ async function sendTelegram(
   chatId,
   text
 ) {
+
   const response =
     await fetch(
       `https://api.telegram.org/bot${token}/sendMessage`,
@@ -439,14 +766,17 @@ async function sendTelegram(
             "application/json"
         },
 
-        body: JSON.stringify({
-          chat_id: chatId,
-          text
-        })
+        body:
+          JSON.stringify({
+            chat_id:
+              chatId,
+            text
+          })
       }
     );
 
   if (!response.ok) {
+
     console.error(
       "TELEGRAM ERROR:",
       await response.text()
@@ -459,64 +789,97 @@ async function sendTelegram(
 // SESSION
 // ======================================
 
-function resetSession(chatId) {
+function resetSession(
+  chatId
+) {
+
   sessions[chatId] = {
+
     step: "idle",
+
     product: "",
+
     maxPrice: 0,
-    minProfit: 0
+
+    profitPercent: 15,
+
+    bestDeal: null,
+
+    bestSellingPrice: 0,
+
+    lastResults: []
   };
 }
 
 
 // ======================================
-// RESPONSE
+// FORMAT RESULTS
 // ======================================
 
 function formatResults(
   session,
   results
 ) {
+
   if (!results.length) {
+
     return (
       "🔎 نتيجة البحث\n\n" +
+
       "لم يجد الوكيل إعلانات مطابقة ضمن أقصى سعر شراء المحدد.\n\n" +
+
       "📦 المنتج: " +
       session.product +
       "\n" +
+
       "💰 أقصى شراء: " +
-      session.maxPrice +
+      formatPrice(
+        session.maxPrice
+      ) +
       " грн\n" +
-      "📈 أدنى ربح: " +
-      session.minProfit +
-      " грн\n\n" +
+
+      "📈 نسبة الربح: " +
+      session.profitPercent +
+      "%\n\n" +
+
       "استخدم /search لبحث جديد."
     );
   }
 
   let message =
+
     "🔎 نتائج البحث الحقيقي في OLX.ua\n\n" +
+
     "📦 المنتج: " +
     session.product +
     "\n" +
+
     "💰 أقصى شراء: " +
-    session.maxPrice +
+    formatPrice(
+      session.maxPrice
+    ) +
     " грн\n" +
-    "📈 أدنى ربح: " +
-    session.minProfit +
-    " грн\n\n";
+
+    "📈 نسبة الربح: " +
+    session.profitPercent +
+    "%\n\n";
 
   results.forEach(
     (item, index) => {
+
       message +=
+
         `${index + 1}. ${item.title}\n` +
-        `💰 السعر: ${formatPrice(item.price)} грн\n`;
+
+        `💰 سعر الشراء: ${formatPrice(item.price)} грн\n`;
 
       if (item.city) {
+
         message +=
           `📍 ${item.city}`;
 
         if (item.region) {
+
           message +=
             `، ${item.region}`;
         }
@@ -525,10 +888,13 @@ function formatResults(
       }
 
       message +=
-        `📈 الربح المطلوب: ${formatPrice(item.potentialProfit)} грн\n` +
-        `💵 سعر البيع المطلوب: ${formatPrice(item.requiredSellingPrice)} грн\n`;
+
+        `📈 الربح المتوقع: ${formatPrice(item.potentialProfit)} грн\n` +
+
+        `💵 سعر البيع المقترح: ${formatPrice(item.requiredSellingPrice)} грн\n`;
 
       if (item.url) {
+
         message +=
           `🔗 ${item.url}\n`;
       }
@@ -538,23 +904,134 @@ function formatResults(
   );
 
   message +=
+
+    "🤝 إذا أردت البحث عن زبون محتمل لهذه الصفقة، أرسل:\n" +
+
+    "/buyers\n\n" +
+
     "استخدم /search لبحث جديد.";
 
   return message;
 }
 
 
-function formatPrice(value) {
-  return Number(value)
-    .toLocaleString("en-US", {
-      maximumFractionDigits: 0
-    });
+// ======================================
+// FORMAT BUYERS
+// ======================================
+
+function formatBuyerResults(
+  session,
+  buyers
+) {
+
+  if (!buyers.length) {
+
+    return (
+
+      "🤝 البحث عن الزبائن\n\n" +
+
+      "لم يجد الوكيل حاليًا إعلانات عامة تشير بوضوح إلى رغبة في شراء:\n\n" +
+
+      "📦 " +
+      session.product +
+      "\n\n" +
+
+      "يمكنك استخدام /search لبحث جديد."
+    );
+  }
+
+  let message =
+
+    "🤝 زبائن محتملون\n\n" +
+
+    "📦 المنتج: " +
+    session.product +
+    "\n" +
+
+    "💵 سعر البيع المقترح: " +
+    formatPrice(
+      session.bestSellingPrice
+    ) +
+    " грн\n\n";
+
+  buyers.forEach(
+    (item, index) => {
+
+      message +=
+
+        `${index + 1}. ${item.title}\n`;
+
+      if (item.description) {
+
+        const description =
+          item.description
+            .replace(/\s+/g, " ")
+            .slice(0, 180);
+
+        message +=
+          `📝 ${description}\n`;
+      }
+
+      if (item.city) {
+
+        message +=
+          `📍 ${item.city}`;
+
+        if (item.region) {
+
+          message +=
+            `، ${item.region}`;
+        }
+
+        message += "\n";
+      }
+
+      if (item.url) {
+
+        message +=
+          `🔗 ${item.url}\n`;
+      }
+
+      message += "\n";
+    }
+  );
+
+  message +=
+
+    "⚠️ هذه زبائن محتملون فقط من إعلانات عامة، وليست تأكيدًا أن صاحب الإعلان سيشتري.\n\n" +
+
+    "استخدم /search لبحث جديد.";
+
+  return message;
 }
 
 
+// ======================================
+// PRICE
+// ======================================
+
+function formatPrice(value) {
+
+  return Number(value)
+    .toLocaleString(
+      "en-US",
+      {
+        maximumFractionDigits: 0
+      }
+    );
+}
+
+
+// ======================================
+// OK
+// ======================================
+
 function ok() {
+
   return {
+
     statusCode: 200,
+
     body: "OK"
   };
 }
