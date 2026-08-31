@@ -199,10 +199,7 @@ if (session.step === "selectDeal") {
     // PRODUCT
     // =========================
 
-    if (
-      session.step === "idle" ||
-      session.step === "ready"
-    ) {
+    if (session.step === "idle") {
       session.product = text;
       session.step = "maxPrice";
 
