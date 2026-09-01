@@ -11,9 +11,10 @@ body: "TELEGRAM_BOT_TOKEN is not configured"
 const webhookUrl =
 "https://coruscating-alpaca-71b3d8.netlify.app/.netlify/functions/telegram-webhook";
 
-const response = await fetch(
-"https://api.telegram.org/bot${token}/setWebhook?url=${encodeURIComponent(webhookUrl)}"
-);
+const telegramUrl =
+"https://api.telegram.org/bot${token}/setWebhook?url=${encodeURIComponent(webhookUrl)}";
+
+const response = await fetch(telegramUrl);
 
 const result = await response.json();
 
