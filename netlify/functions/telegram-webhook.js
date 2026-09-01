@@ -37,55 +37,7 @@ exports.handler = async (event) => {
     }
 
     const session = sessions[chatId];
-// =========================
-// SELECT DEAL
-// =========================
 
-if (session.step === "selectDeal") {
-  const number = parseInteger(text);
-
-  if (
-    !number ||
-    !session.results ||
-    !session.results[number - 1]
-  ) {
-    await sendTelegram(
-      token,
-      chatId,
-      "❌ أرسل رقم صفقة صحيح من القائمة."
-    );
-
-    return ok();
-  }
-
-  session.selectedDeal =
-    session.results[number - 1];
-
-  session.step = "ready";
-
-  await sendTelegram(
-    token,
-    chatId,
-    "✅ تم اختيار الصفقة رقم " +
-    number +
-    "\n\n" +
-    "📦 " +
-    session.selectedDeal.title +
-    "\n" +
-    "💰 سعر الشراء: " +
-    formatPrice(session.selectedDeal.price) +
-    " грн\n" +
-    "📈 الربح: " +
-    formatPrice(session.selectedDeal.potentialProfit) +
-    " грн\n" +
-    "💵 سعر البيع: " +
-    formatPrice(session.selectedDeal.requiredSellingPrice) +
-    " грн\n\n" +
-    "🤝 أرسل /buyers للبحث عن زبون لهذه الصفقة."
-  );
-
-  return ok();
-}
     // =========================
     // START
     // =========================
@@ -96,28 +48,286 @@ if (session.step === "selectDeal") {
       await sendTelegram(
         token,
         chatId,
-        "Welcome to Smart Trade Agent 🤖\n\n" +
-        "Agent connected successfully. Bot ready.\n\n" +
-        "استخدم /search لبدء البحث."
+        "Welcome to Trade Agent Smart 🤖\n\n" +
+        "Agent connected successfully.\n\n" +
+        "استخدم /search للبحث عن طلبات شراء."
       );
 
       return ok();
     }
 
     // =========================
-    // SEARCH
+    // SEARCH START
     // =========================
 
     if (text === "/search") {
       resetSession(chatId);
 
+      session.step = "buyerProducts";
+
       await sendTelegram(
         token,
         chatId,
-        "🔎 Smart Trade Agent\n\n" +
-        "أرسل اسم المنتج الذي تريد البحث عنه.\n\n" +
+        "🔎 البحث عن طلبات شراء\n\n" +
+        "أرسل اسم منتج واحد أو عدة منتجات.\n\n" +
+        "يمكنك كتابة عدة منتجات مفصولة بفاصلة.\n\n" +
         "مثال:\n" +
-        "iPhone 14"
+        "iPhone 14, PlayStation 5, MacBook Air\n\n" +
+        "سيبحث الوكيل عن طلبات شراء حقيقية في OLX.ua."
+      );
+
+      return ok();
+    }
+
+    // =========================
+    // BUYER REQUEST SEARCH
+    // =========================
+
+    if (session.step === "buyerProducts") {
+
+      const products = text
+        .split(",")
+        .map(item => item.trim())
+        .filter(Boolean)
+        .slice(0, 10);
+
+      if (!products.length) {
+        await sendTelegram(
+          token,
+          chatId,
+          "❌ أرسل اسم منتج واحد على الأقل."
+        );
+
+        return ok();
+      }
+
+      session.requestProducts = products;
+      session.step = "findingRequests";
+
+      await sendTelegram(
+        token,
+        chatId,
+        "🔎 بدأ البحث عن طلبات الشراء...\n\n" +
+        products
+          .map((p, i) => `${i + 1}. ${p}`)
+          .join("\n") +
+        "\n\n⏳ يبحث الوكيل في الإعلانات العامة..."
+      );
+
+      try {
+
+        const requests = [];
+
+        for (const product of products) {
+
+          const found =
+            await searchBuyerRequests(
+              product,
+              apifyToken
+            );
+
+          found.forEach(item => {
+
+            requests.push({
+              ...item,
+              requestedProduct: product
+            });
+
+          });
+        }
+
+        session.requestResults =
+          requests.slice(0, 20);
+
+        session.step = "selectRequest";
+
+        await sendTelegram(
+          token,
+          chatId,
+          formatRequestResults(
+            session,
+            session.requestResults
+          )
+        );
+
+      } catch (error) {
+
+        console.error(
+          "BUYER REQUEST SEARCH ERROR:",
+          error
+        );
+
+        session.step = "ready";
+
+        await sendTelegram(
+          token,
+          chatId,
+          "❌ حدث خطأ أثناء البحث عن طلبات الشراء.\n\n" +
+          error.message +
+          "\n\n" +
+          "استخدم /search للمحاولة من جديد."
+        );
+      }
+
+      return ok();
+    }
+
+    // =========================
+    // SELECT REQUEST
+    // =========================
+
+    if (session.step === "selectRequest") {
+
+      const number = parseInteger(text);
+
+      if (
+        !number ||
+        !session.requestResults ||
+        !session.requestResults[number - 1]
+      ) {
+
+        await sendTelegram(
+          token,
+          chatId,
+          "❌ أرسل رقم طلب صحيح من القائمة."
+        );
+
+        return ok();
+      }
+
+      const selectedRequest =
+        session.requestResults[number - 1];
+
+      session.selectedRequest =
+        selectedRequest;
+
+      session.product =
+        selectedRequest.requestedProduct;
+
+      session.step = "findingOffers";
+
+      await sendTelegram(
+        token,
+        chatId,
+        "✅ تم اختيار الطلب رقم " +
+        number +
+        "\n\n" +
+        "📦 المطلوب: " +
+        session.product +
+        "\n\n" +
+        "🔎 الآن يبحث الوكيل عن المعروضات المناسبة...\n\n" +
+        "⏳ البحث في OLX.ua..."
+      );
+
+      try {
+
+        const offers =
+          await searchOLX(
+            session.product,
+            apifyToken
+          );
+
+        session.results = offers;
+        session.lastResults = offers;
+
+        if (offers.length) {
+          session.step = "selectDeal";
+        } else {
+          session.step = "ready";
+        }
+
+        await sendTelegram(
+          token,
+          chatId,
+          formatResults(
+            session,
+            offers
+          )
+        );
+
+      } catch (error) {
+
+        console.error(
+          "OLX SEARCH ERROR:",
+          error
+        );
+
+        session.step = "ready";
+
+        await sendTelegram(
+          token,
+          chatId,
+          "❌ حدث خطأ أثناء البحث عن المعروضات.\n\n" +
+          error.message
+        );
+      }
+
+      return ok();
+    }
+
+    // =========================
+    // SELECT DEAL
+    // =========================
+
+    if (session.step === "selectDeal") {
+
+      const number = parseInteger(text);
+
+      if (
+        !number ||
+        !session.results ||
+        !session.results[number - 1]
+      ) {
+
+        await sendTelegram(
+          token,
+          chatId,
+          "❌ أرسل رقم المعروضة الصحيح من القائمة."
+        );
+
+        return ok();
+      }
+
+      session.selectedDeal =
+        session.results[number - 1];
+
+      session.product =
+        session.selectedDeal.product ||
+        session.product;
+
+      session.bestDeal =
+        session.selectedDeal;
+
+      session.bestSellingPrice =
+        session.selectedDeal.requiredSellingPrice;
+
+      session.step = "ready";
+
+      await sendTelegram(
+        token,
+        chatId,
+        "✅ تم اختيار المعروضة رقم " +
+        number +
+        "\n\n" +
+        "📦 " +
+        session.selectedDeal.title +
+        "\n" +
+        "💰 سعر الشراء: " +
+        formatPrice(
+          session.selectedDeal.price
+        ) +
+        " грн\n" +
+        "📈 الربح المتوقع: " +
+        formatPrice(
+          session.selectedDeal.potentialProfit
+        ) +
+        " грн\n" +
+        "💵 سعر البيع المقترح: " +
+        formatPrice(
+          session.selectedDeal.requiredSellingPrice
+        ) +
+        " грн\n\n" +
+        "🤝 أرسل /buyers إذا أردت البحث عن زبائن محتملين لهذه المعروضة."
       );
 
       return ok();
@@ -129,12 +339,16 @@ if (session.step === "selectDeal") {
 
     if (text === "/buyers") {
 
-      if (!session.product) {
+      if (
+        !session.selectedDeal ||
+        !session.product
+      ) {
+
         await sendTelegram(
           token,
           chatId,
-          "❌ لا توجد صفقة محفوظة.\n\n" +
-          "استخدم /search أولًا."
+          "❌ يجب أولًا اختيار طلب ثم اختيار معروضة.\n\n" +
+          "استخدم /search للبدء."
         );
 
         return ok();
@@ -145,19 +359,25 @@ if (session.step === "selectDeal") {
       await sendTelegram(
         token,
         chatId,
-        "🔎 البحث عن زبائن محتملين...\n\n" +
+        "🤝 البحث عن زبائن محتملين...\n\n" +
         "📦 المنتج: " +
         session.product +
         "\n" +
+        "💰 سعر الشراء: " +
+        formatPrice(
+          session.selectedDeal.price
+        ) +
+        " грн\n" +
         "💵 سعر البيع المقترح: " +
         formatPrice(
-          session.bestSellingPrice || 0
+          session.selectedDeal.requiredSellingPrice
         ) +
         " грн\n\n" +
         "⏳ يبحث الوكيل في الإعلانات العامة..."
       );
 
       try {
+
         const buyers =
           await searchPotentialBuyers(
             session.product,
@@ -195,161 +415,6 @@ if (session.step === "selectDeal") {
       return ok();
     }
 
-    // =========================
-    // PRODUCT
-    // =========================
-
-    if (session.step === "idle") {
-      session.product = text;
-      session.step = "maxPrice";
-
-      await sendTelegram(
-        token,
-        chatId,
-        "📦 المنتج: " +
-        session.product +
-        "\n\n" +
-        "الآن أرسل أقصى سعر شراء بالـ hryvnia (грн).\n\n" +
-        "مثال: 15000"
-      );
-
-      return ok();
-    }
-
-    // =========================
-    // MAX PRICE
-    // =========================
-
-    if (session.step === "maxPrice") {
-
-      const price = parseInteger(text);
-
-      if (!price || price <= 0) {
-        await sendTelegram(
-          token,
-          chatId,
-          "❌ أرسل سعرًا صحيحًا، مثال: 15000"
-        );
-
-        return ok();
-      }
-
-      session.maxPrice = price;
-      session.step = "minProfit";
-
-      await sendTelegram(
-        token,
-        chatId,
-        "💰 أقصى سعر شراء: " +
-        formatPrice(price) +
-        " грн\n\n" +
-        "الآن أرسل نسبة الربح المطلوبة.\n\n" +
-        "النسبة يجب أن تكون بين 15% و20%.\n\n" +
-        "مثال: 15"
-      );
-
-      return ok();
-    }
-
-    // =========================
-    // PROFIT PERCENTAGE
-    // =========================
-
-    if (session.step === "minProfit") {
-
-      const profitPercent =
-        parseInteger(text);
-
-      if (
-        !profitPercent ||
-        profitPercent < 15 ||
-        profitPercent > 20
-      ) {
-        await sendTelegram(
-          token,
-          chatId,
-          "❌ أرسل نسبة صحيحة بين 15% و20%.\n\n" +
-          "مثال: 15"
-        );
-
-        return ok();
-      }
-
-      session.profitPercent =
-        profitPercent;
-
-      session.step = "searching";
-
-      await sendTelegram(
-        token,
-        chatId,
-        "⏳ بدأ البحث الحقيقي في OLX.ua...\n\n" +
-        "📦 المنتج: " +
-        session.product +
-        "\n" +
-        "💰 أقصى شراء: " +
-        formatPrice(session.maxPrice) +
-        " грн\n" +
-        "📈 نسبة الربح: " +
-        session.profitPercent +
-        "%"
-      );
-
-      try {
-
-        const results =
-          await searchOLX(
-            session.product,
-            session.maxPrice,
-            session.profitPercent,
-            apifyToken
-          );
-
-        session.results = results;
-session.step = "selectDeal";
-        if (results.length) {
-
-          session.bestDeal =
-            results[0];
-
-          session.bestSellingPrice =
-            results[0].requiredSellingPrice;
-
-          session.lastResults =
-            results;
-        }
-
-        await sendTelegram(
-          token,
-          chatId,
-          formatResults(
-            session,
-            results
-          )
-        );
-
-      } catch (error) {
-
-        console.error(
-          "OLX SEARCH ERROR:",
-          error
-        );
-
-        session.step = "ready";
-
-        await sendTelegram(
-          token,
-          chatId,
-          "❌ حدث خطأ أثناء البحث في OLX.ua.\n\n" +
-          error.message +
-          "\n\n" +
-          "استخدم /search لبحث جديد."
-        );
-      }
-
-      return ok();
-    }
-
     return ok();
 
   } catch (error) {
@@ -368,21 +433,18 @@ session.step = "selectDeal";
 
 
 // ======================================
-// SEARCH OLX
+// SEARCH BUYER REQUESTS
 // ======================================
 
-async function searchOLX(
+async function searchBuyerRequests(
   product,
-  maxPrice,
-  profitPercent,
   apifyToken
 ) {
 
   const input = {
 
-    searchQuery: product,
-
-    priceMax: maxPrice,
+    searchQuery:
+      `${product} куплю`,
 
     sortBy: "date",
 
@@ -394,7 +456,7 @@ async function searchOLX(
   };
 
   console.log(
-    "APIFY INPUT:",
+    "REQUEST SEARCH INPUT:",
     JSON.stringify(input)
   );
 
@@ -424,7 +486,7 @@ async function searchOLX(
   if (!response.ok) {
 
     throw new Error(
-      `Apify HTTP ${response.status}: ${responseText}`
+      `Apify request search HTTP ${response.status}: ${responseText}`
     );
   }
 
@@ -438,19 +500,114 @@ async function searchOLX(
   } catch {
 
     throw new Error(
-      "Apify returned invalid JSON."
+      "Request search returned invalid JSON."
     );
   }
 
   if (!Array.isArray(data)) {
 
     throw new Error(
-      "Apify returned an unexpected dataset format."
+      "Request search returned unexpected data."
+    );
+  }
+
+  return data
+
+    .map(normalizeListing)
+
+    .filter(
+      item =>
+        isPotentialBuyer(
+          item,
+          product
+        )
+    )
+
+    .slice(0, 10);
+}
+
+
+// ======================================
+// SEARCH OLX OFFERS
+// ======================================
+
+async function searchOLX(
+  product,
+  apifyToken
+) {
+
+  const input = {
+
+    searchQuery:
+      product,
+
+    sortBy: "date",
+
+    maxItems: 25,
+
+    proxyConfiguration: {
+      useApifyProxy: true
+    }
+  };
+
+  console.log(
+    "OFFER SEARCH INPUT:",
+    JSON.stringify(input)
+  );
+
+  const response =
+    await fetch(
+      APIFY_URL +
+      "?token=" +
+      encodeURIComponent(
+        apifyToken
+      ),
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
+
+        body:
+          JSON.stringify(input)
+      }
+    );
+
+  const responseText =
+    await response.text();
+
+  if (!response.ok) {
+
+    throw new Error(
+      `Apify offer search HTTP ${response.status}: ${responseText}`
+    );
+  }
+
+  let data;
+
+  try {
+
+    data =
+      JSON.parse(responseText);
+
+  } catch {
+
+    throw new Error(
+      "Offer search returned invalid JSON."
+    );
+  }
+
+  if (!Array.isArray(data)) {
+
+    throw new Error(
+      "Offer search returned unexpected dataset format."
     );
   }
 
   console.log(
-    "APIFY ITEMS:",
+    "APIFY OFFER ITEMS:",
     data.length
   );
 
@@ -459,12 +616,8 @@ async function searchOLX(
     .map(normalizeListing)
 
     .filter(
-      item => item.price > 0
-    )
-
-    .filter(
       item =>
-        item.price <= maxPrice
+        item.price > 0
     )
 
     .filter(
@@ -476,6 +629,9 @@ async function searchOLX(
     )
 
     .map(item => {
+
+      // الربح الافتراضي 15%
+      const profitPercent = 15;
 
       const potentialProfit =
         Math.round(
@@ -491,6 +647,8 @@ async function searchOLX(
       return {
 
         ...item,
+
+        product,
 
         potentialProfit,
 
@@ -517,15 +675,6 @@ async function searchPotentialBuyers(
   product,
   apifyToken
 ) {
-
-  /*
-   * مهم:
-   * هذا يبحث عن إعلانات عامة تحتوي
-   * على مؤشرات مثل "куплю" أو "ищу".
-   *
-   * لا يتم استخراج أرقام هواتف أو
-   * بيانات شخصية.
-   */
 
   const buyerQuery =
     `${product} куплю`;
@@ -737,7 +886,12 @@ function normalizeListing(item) {
 // ======================================
 // PRODUCT MATCH
 // ======================================
-function isRelevantProduct(title, product) {
+
+function isRelevantProduct(
+  title,
+  product
+) {
+
   const t =
     String(title || "")
       .toLowerCase()
@@ -753,41 +907,54 @@ function isRelevantProduct(title, product) {
   }
 
   // ======================================
-  // كلمات تستبعد الإكسسوارات وقطع الغيار
+  // استبعاد الإكسسوارات وقطع الغيار
   // ======================================
 
   const excludedWords = [
+
     "чохол",
     "чехол",
     "case",
+
     "кабель",
     "кабели",
     "кабель для",
+
     "скло",
     "стекло",
     "захисне скло",
     "защитное стекло",
+
     "дисплей",
     "дисплейный",
+
     "екран",
     "экран",
+
     "корпус",
     "корпус на",
+
     "крышка",
     "задняя крышка",
+
     "акумулятор",
     "батарея",
     "battery",
+
     "зарядка",
     "зарядное",
+
     "блок живлення",
+
     "наушники",
     "навушники",
+
     "держатель",
     "тримач",
+
     "пленка",
     "плівка",
-    "стекло защитное",
+
     "запчасть",
     "запчасти",
     "запчастина",
@@ -796,41 +963,52 @@ function isRelevantProduct(title, product) {
 
   const isAccessory =
     excludedWords.some(
-      word => t.includes(word)
+      word =>
+        t.includes(word)
     );
 
   if (isAccessory) {
     return false;
   }
+
   // ======================================
   // استبعاد الأجهزة المعطلة
   // ======================================
 
   const brokenWords = [
+
     "не робочий",
     "нерабочий",
+
     "не працює",
     "не работает",
+
     "несправний",
     "неисправный",
+
     "зламаний",
     "сломанный",
+
     "на запчастини",
     "на запчасти",
+
     "під відновлення",
     "под восстановление",
+
     "потребує ремонту",
     "требует ремонта"
   ];
 
   const isBroken =
     brokenWords.some(
-      word => t.includes(word)
+      word =>
+        t.includes(word)
     );
 
   if (isBroken) {
     return false;
   }
+
   // ======================================
   // iPhone
   // ======================================
@@ -840,7 +1018,6 @@ function isRelevantProduct(title, product) {
     p.includes("айфон")
   ) {
 
-    // يجب أن يحتوي العنوان على iPhone
     const hasIphone =
       t.includes("iphone") ||
       t.includes("айфон");
@@ -849,7 +1026,6 @@ function isRelevantProduct(title, product) {
       return false;
     }
 
-    // استخراج موديل iPhone من طلب المستخدم
     const modelMatch =
       p.match(
         /(?:iphone|айфон)\s*(\d{1,2})/i
@@ -859,22 +1035,6 @@ function isRelevantProduct(title, product) {
 
       const requestedModel =
         modelMatch[1];
-
-      /*
-       * نقبل الموديل المطلوب فقط.
-       *
-       * مثال:
-       * iPhone 14
-       *
-       * يقبل:
-       * iPhone 14
-       * Apple iPhone 14 128GB
-       *
-       * ويرفض:
-       * iPhone 13
-       * iPhone XR
-       * iPhone 15
-       */
 
       const modelRegex =
         new RegExp(
@@ -911,7 +1071,168 @@ function isRelevantProduct(title, product) {
 }
 
 
-  
+// ======================================
+// FORMAT REQUEST RESULTS
+// ======================================
+
+function formatRequestResults(
+  session,
+  results
+) {
+
+  if (!results.length) {
+
+    return (
+
+      "🔎 طلبات الشراء\n\n" +
+
+      "لم يجد الوكيل حاليًا طلبات شراء واضحة للمنتجات المطلوبة.\n\n" +
+
+      "استخدم /search للبحث من جديد."
+    );
+  }
+
+  let message =
+    "🔎 طلبات الشراء الموجودة\n\n";
+
+  results.forEach(
+    (item, index) => {
+
+      message +=
+
+        `${index + 1}. 📦 ${item.requestedProduct}\n`;
+
+      message +=
+        `📝 ${item.title}\n`;
+
+      if (item.city) {
+
+        message +=
+          `📍 ${item.city}`;
+
+        if (item.region) {
+
+          message +=
+            `، ${item.region}`;
+        }
+
+        message += "\n";
+      }
+
+      if (item.description) {
+
+        const description =
+          item.description
+            .replace(/\s+/g, " ")
+            .slice(0, 160);
+
+        message +=
+          `💬 ${description}\n`;
+      }
+
+      if (item.url) {
+
+        message +=
+          `🔗 ${item.url}\n`;
+      }
+
+      message += "\n";
+    }
+  );
+
+  message +=
+    "👇 أرسل رقم الطلب الذي تريد من الوكيل البحث عن معروضات له.\n\n" +
+    "مثال: 4";
+
+  return message;
+}
+
+
+// ======================================
+// FORMAT OFFER RESULTS
+// ======================================
+
+function formatResults(
+  session,
+  results
+) {
+
+  if (!results.length) {
+
+    return (
+
+      "📦 المعروضات\n\n" +
+
+      "لم يجد الوكيل معروضات مناسبة حاليًا لـ:\n\n" +
+
+      "📦 " +
+      session.product +
+      "\n\n" +
+
+      "استخدم /search لبحث جديد."
+    );
+  }
+
+  let message =
+
+    "📦 المعروضات المناسبة\n\n" +
+
+    "📦 الطلب المختار: " +
+    session.product +
+    "\n\n";
+
+  results.forEach(
+    (item, index) => {
+
+      message +=
+
+        `${index + 1}. ${item.title}\n` +
+
+        `💰 سعر الشراء: ${formatPrice(item.price)} грн\n`;
+
+      if (item.city) {
+
+        message +=
+          `📍 ${item.city}`;
+
+        if (item.region) {
+
+          message +=
+            `، ${item.region}`;
+        }
+
+        message += "\n";
+      }
+
+      message +=
+
+        `📈 الربح المتوقع: ${formatPrice(item.potentialProfit)} грн\n` +
+
+        `💵 سعر البيع المقترح: ${formatPrice(item.requiredSellingPrice)} грн\n`;
+
+      if (item.url) {
+
+        message +=
+          `🔗 ${item.url}\n`;
+      }
+
+      message += "\n";
+    }
+  );
+
+  message += "\n";
+    }
+  );
+
+  message +=
+
+    "⚠️ هذه زبائن محتملون فقط من إعلانات عامة، وليست تأكيدًا أن صاحب الإعلان سيشتري.\n\n" +
+
+    "استخدم /search لبحث جديد.";
+
+  return message;
+}
+
 
 // ======================================
 // NUMBER
@@ -990,210 +1311,22 @@ function resetSession(
 
     product: "",
 
-    maxPrice: 0,
+    requestProducts: [],
 
-    profitPercent: 15,
+    requestResults: [],
+
+    selectedRequest: null,
+
+    results: [],
+
+    lastResults: [],
+
+    selectedDeal: null,
 
     bestDeal: null,
 
-    bestSellingPrice: 0,
-
-    lastResults: []
+    bestSellingPrice: 0
   };
-}
-
-
-// ======================================
-// FORMAT RESULTS
-// ======================================
-
-function formatResults(
-  session,
-  results
-) {
-
-  if (!results.length) {
-
-    return (
-      "🔎 نتيجة البحث\n\n" +
-
-      "لم يجد الوكيل إعلانات مطابقة ضمن أقصى سعر شراء المحدد.\n\n" +
-
-      "📦 المنتج: " +
-      session.product +
-      "\n" +
-
-      "💰 أقصى شراء: " +
-      formatPrice(
-        session.maxPrice
-      ) +
-      " грн\n" +
-
-      "📈 نسبة الربح: " +
-      session.profitPercent +
-      "%\n\n" +
-
-      "استخدم /search لبحث جديد."
-    );
-  }
-
-  let message =
-
-    "🔎 نتائج البحث الحقيقي في OLX.ua\n\n" +
-
-    "📦 المنتج: " +
-    session.product +
-    "\n" +
-
-    "💰 أقصى شراء: " +
-    formatPrice(
-      session.maxPrice
-    ) +
-    " грн\n" +
-
-    "📈 نسبة الربح: " +
-    session.profitPercent +
-    "%\n\n";
-
-  results.forEach(
-    (item, index) => {
-
-      message +=
-
-        `${index + 1}. ${item.title}\n` +
-
-        `💰 سعر الشراء: ${formatPrice(item.price)} грн\n`;
-
-      if (item.city) {
-
-        message +=
-          `📍 ${item.city}`;
-
-        if (item.region) {
-
-          message +=
-            `، ${item.region}`;
-        }
-
-        message += "\n";
-      }
-
-      message +=
-
-        `📈 الربح المتوقع: ${formatPrice(item.potentialProfit)} грн\n` +
-
-        `💵 سعر البيع المقترح: ${formatPrice(item.requiredSellingPrice)} грн\n`;
-
-      if (item.url) {
-
-        message +=
-          `🔗 ${item.url}\n`;
-      }
-
-      message += "\n";
-    }
-  );
-
-  message +=
-
-    "🤝 إذا أردت البحث عن زبون محتمل لهذه الصفقة، أرسل:\n" +
-
-    "/buyers\n\n" +
-
-    "استخدم /search لبحث جديد.";
-
-  return message;
-}
-
-
-// ======================================
-// FORMAT BUYERS
-// ======================================
-
-function formatBuyerResults(
-  session,
-  buyers
-) {
-
-  if (!buyers.length) {
-
-    return (
-
-      "🤝 البحث عن الزبائن\n\n" +
-
-      "لم يجد الوكيل حاليًا إعلانات عامة تشير بوضوح إلى رغبة في شراء:\n\n" +
-
-      "📦 " +
-      session.product +
-      "\n\n" +
-
-      "يمكنك استخدام /search لبحث جديد."
-    );
-  }
-
-  let message =
-
-    "🤝 زبائن محتملون\n\n" +
-
-    "📦 المنتج: " +
-    session.product +
-    "\n" +
-
-    "💵 سعر البيع المقترح: " +
-    formatPrice(
-      session.bestSellingPrice
-    ) +
-    " грн\n\n";
-
-  buyers.forEach(
-    (item, index) => {
-
-      message +=
-
-        `${index + 1}. ${item.title}\n`;
-
-      if (item.description) {
-
-        const description =
-          item.description
-            .replace(/\s+/g, " ")
-            .slice(0, 180);
-
-        message +=
-          `📝 ${description}\n`;
-      }
-
-      if (item.city) {
-
-        message +=
-          `📍 ${item.city}`;
-
-        if (item.region) {
-
-          message +=
-            `، ${item.region}`;
-        }
-
-        message += "\n";
-      }
-
-      if (item.url) {
-
-        message +=
-          `🔗 ${item.url}\n`;
-      }
-
-      message += "\n";
-    }
-  );
-
-  message +=
-
-    "⚠️ هذه زبائن محتملون فقط من إعلانات عامة، وليست تأكيدًا أن صاحب الإعلان سيشتري.\n\n" +
-
-    "استخدم /search لبحث جديد.";
-
-  return message;
 }
 
 
