@@ -1220,9 +1220,7 @@ function formatResults(
     }
   );
 
-  message += "\n";
-    }
-  );
+  
 
   message +=
 
