@@ -3,18 +3,12 @@
 // OLX SEARCH BACKGROUND FUNCTION
 // ======================================================
 
-const { getStore } = require("@netlify/blobs");
+const {
+  connectLambda,
+  getStore,
+} = require("@netlify/blobs");
 
-// ------------------------------------------------------
-// Netlify Blobs
-// ------------------------------------------------------
-
-const sessionsStore = getStore(
-  "trade-agent-sessions",
-  {
-    consistency: "strong",
-  }
-);
+let sessionsStore;
 
 // ------------------------------------------------------
 // Constants
@@ -1764,6 +1758,11 @@ async function searchSellers(
 exports.handler = async function (
   event
 ) {
+connectLambda(event);
+
+sessionsStore = getStore(
+  "trade-agent-sessions"
+);
   const token =
     process.env.TELEGRAM_BOT_TOKEN;
 
