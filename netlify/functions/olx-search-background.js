@@ -1899,7 +1899,7 @@ sessionsStore = getStore(
             "❌ حدث خطأ أثناء البحث عن البائعين.\n\n" +
             error.message
           );
-        } catch (
+                    } catch (
           telegramError
         ) {
           console.error(
@@ -1908,9 +1908,7 @@ sessionsStore = getStore(
           );
         }
       }
-    );
-  }
-
+    }   
   else {
     return {
       statusCode: 400,
