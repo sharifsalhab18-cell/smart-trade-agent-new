@@ -1220,3 +1220,185 @@ function isSellerListing(
   }
 
   const detected
+ =
+    detectProduct(text);
+
+  if (!detected) {
+    return false;
+  }
+
+  const selectedText =
+    normalizeText(
+      [
+        selected.requestSearchProduct,
+        selected.exactProduct,
+        selected.title,
+        selected.normalizedProduct,
+        selected.description,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    );
+
+  const selectedProduct =
+    detectProduct(
+      selectedText
+    );
+
+  if (!selectedProduct) {
+    return false;
+  }
+
+  // Must be same main product
+  if (
+    detected.category !==
+    selectedProduct.category
+  ) {
+    return false;
+  }
+
+  // For phones, require same model number
+  if (
+    detected.category ===
+    "iPhone"
+  ) {
+    const a =
+      selectedProduct.product.match(
+        /\d{2}/
+      );
+
+    const b =
+      detected.product.match(
+        /\d{2}/
+      );
+
+    if (
+      a &&
+      b &&
+      a[0] !== b[0]
+    ) {
+      return false;
+    }
+  }
+
+  if (
+    detected.category ===
+    "Samsung Galaxy"
+  ) {
+    const a =
+      selectedProduct.product.match(
+        /S\d{2}/i
+      );
+
+    const b =
+      detected.product.match(
+        /S\d{2}/i
+      );
+
+    if (
+      a &&
+      b &&
+      a[0].toLowerCase() !==
+      b[0].toLowerCase()
+    ) {
+      return false;
+    }
+  }
+
+  // Seller ads should normally contain price or selling language
+  const hasPrice =
+    parsePrice(item) !== null;
+
+  const sellerLanguage =
+    containsAny(
+      text,
+      [
+        "продам",
+        "продаю",
+        "продажа",
+        "продається",
+        "цена",
+        "ціна",
+        "грн",
+        "uah",
+        "₴",
+      ]
+    );
+
+  return (
+    hasPrice ||
+    sellerLanguage
+  );
+}
+
+// ------------------------------------------------------
+// Market price analysis
+// ------------------------------------------------------
+
+function calculateMarketOpinion(
+  item,
+  allItems
+) {
+  const price =
+    parsePrice(item);
+
+  if (!price) {
+    return "ℹ️ Оцінка ціни: недостатньо даних";
+  }
+
+  const prices =
+    allItems
+      .map(parsePrice)
+      .filter(
+        value =>
+          Number.isFinite(value) &&
+          value > 0
+      );
+
+  if (prices.length < 2) {
+    return "ℹ️ Оцінка ціни: недостатньо порівняльних оголошень";
+  }
+
+  const sorted =
+    [...prices].sort(
+      (a, b) => a - b
+    );
+
+  const middle =
+    Math.floor(
+      sorted.length / 2
+    );
+
+  const median =
+    sorted.length % 2
+      ? sorted[middle]
+      : (
+          sorted[middle - 1] +
+          sorted[middle]
+        ) / 2;
+
+  const lowLimit =
+    median * 0.85;
+
+  const highLimit =
+    median * 1.15;
+
+  if (price < lowLimit) {
+    return (
+      `🟢 رأي تقريبي بالسعر: منخفض ` +
+      `(مقارنة بمتوسط السوق الظاهر ≈ ${Math.round(median)} )`
+    );
+  }
+
+  if (price > highLimit) {
+    return (
+      `🔴 رأي تقريبي بالسعر: مرتفع ` +
+      `(مقارنة بمتوسط السوق الظاهر ≈ ${Math.round(median)} )`
+    );
+  }
+
+  return (
+    `🟡 رأي تقريبي بالسعر: طبيعي ` +
+    `(متوسط السوق الظاهر ≈ ${Math.round(median)} )`
+  );
+}
