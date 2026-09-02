@@ -152,31 +152,21 @@ async function searchApify(product) {
     return [];
   }
 
-  // تحويل اسم المنتج إلى جزء من رابط بحث OLX
-  const searchSlug = product
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "-");
-
-  const olxUrl =
-    `https://www.olx.ua/uk/elektronika/telefony-i-aksesuary/mobilnye-telefony-smartfony/q-${encodeURIComponent(searchSlug)}/`;
-
-  console.log("OLX SEARCH URL:", olxUrl);
-
   const actorId =
-    "maroon_trio~olx-ua-scraper-parser";
+    "lowlanddata~olx-ua-scraper";
 
   const apiUrl =
     `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items` +
     `?token=${encodeURIComponent(apiToken)}`;
 
   const input = {
-  url: olxUrl,
-  maxListings: 10,
-  proxyConfiguration: {
-    useApifyProxy: true
-  }
-};
+    searchQuery: product,
+    maxItems: 10,
+    proxyConfiguration: {
+      useApifyProxy: true
+    }
+  };
+
   console.log(
     "APIFY INPUT:",
     JSON.stringify(input)
