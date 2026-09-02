@@ -1836,38 +1836,36 @@ sessionsStore = getStore(
       mode,
     })
   );
-
-  if (
+if (
     mode === "purchaseRequests"
   ) {
     try {
-  await searchPurchaseRequests(
-    chatId,
-    token
-  );
-} catch (error) {
-        console.error(
-          "PURCHASE BACKGROUND FAILED:",
-          error
-        );
+      await searchPurchaseRequests(
+        chatId,
+        token
+      );
+    } catch (error) {
+      console.error(
+        "PURCHASE BACKGROUND FAILED:",
+        error
+      );
 
-        try {
-          await sendTelegram(
-            token,
-            chatId,
-            "❌ حدث خطأ أثناء البحث عن طلبات الشراء.\n\n" +
-            error.message
-          );
-        } catch (
+      try {
+        await sendTelegram(
+          token,
+          chatId,
+          "❌ حدث خطأ أثناء البحث عن طلبات الشراء.\n\n" +
+          error.message
+        );
+      } catch (
+        telegramError
+      ) {
+        console.error(
+          "TELEGRAM ERROR:",
           telegramError
-        ) {
-          console.error(
-            "TELEGRAM ERROR:",
-            telegramError
-          );
-        }
+        );
       }
-    );
+    }
   }
 
   else if (
@@ -1899,7 +1897,7 @@ sessionsStore = getStore(
             "❌ حدث خطأ أثناء البحث عن البائعين.\n\n" +
             error.message
           );
-                    } catch (
+        } catch (
           telegramError
         ) {
           console.error(
@@ -1908,7 +1906,9 @@ sessionsStore = getStore(
           );
         }
       }
-    }   
+    );
+  }
+
   else {
     return {
       statusCode: 400,
@@ -1916,7 +1916,7 @@ sessionsStore = getStore(
         "Unknown search mode",
     };
   }
-
+  
   return {
     statusCode: 202,
     body:
