@@ -69,7 +69,7 @@ async function getSession(chatId) {
       key,
       {
         type: "json",
-        consistency: "strong",
+        
       }
     );
 
