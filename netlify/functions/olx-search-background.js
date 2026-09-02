@@ -1840,11 +1840,12 @@ sessionsStore = getStore(
   if (
     mode === "purchaseRequests"
   ) {
-    searchPurchaseRequests(
-      chatId,
-      token
-    ).catch(
-      async error => {
+    try {
+  await searchPurchaseRequests(
+    chatId,
+    token
+  );
+} catch (error) {
         console.error(
           "PURCHASE BACKGROUND FAILED:",
           error
