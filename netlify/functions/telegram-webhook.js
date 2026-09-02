@@ -18,6 +18,10 @@ exports.handler = async (event) => {
       return ok();
     }
 
+    // =========================
+    // START
+    // =========================
+
     if (text === "/start") {
       await sendTelegram(
         token,
@@ -26,8 +30,13 @@ exports.handler = async (event) => {
         "Agent connected successfully.\n\n" +
         "استخدم /search للبدء."
       );
+
       return ok();
     }
+
+    // =========================
+    // SEARCH
+    // =========================
 
     if (text === "/search") {
       sessions[chatId] = {
@@ -37,13 +46,16 @@ exports.handler = async (event) => {
       await sendTelegram(
         token,
         chatId,
-        "🔎 أرسل اسم المنتج الذي تريد البحث عنه.\n\nمثال:\niPhone 14"
+        "🔎 أرسل اسم المنتج الذي تريد البحث عنه.\n\n" +
+        "مثال:\n" +
+        "iPhone 14"
       );
+
       return ok();
     }
 
     // =========================
-    // PRODUCT SEARCH
+    // PRODUCT
     // =========================
 
     if (sessions[chatId]?.step === "product") {
@@ -71,20 +83,47 @@ exports.handler = async (event) => {
         return ok();
       }
 
-      let messageText = `🔎 نتائج البحث عن: ${product}\n\n`;
+      let resultMessage =
+        `🔎 نتائج البحث عن: ${product}\n\n`;
 
       results.slice(0, 10).forEach((item, index) => {
-        messageText +=
-          `${index + 1}. ${item.title || "بدون عنوان"}\n` +
-          `💰 ${item.price || "السعر غير معروف"}\n` +
-          `${item.url || ""}\n\n`;
+        const title =
+          item.title ||
+          item.name ||
+          "بدون عنوان";
+
+        const price =
+          item.price ||
+          item.priceText ||
+          item.cost ||
+          "السعر غير معروف";
+
+        const url =
+          item.url ||
+          item.link ||
+          item.itemUrl ||
+          "";
+
+        resultMessage +=
+          `${index + 1}. ${title}\n` +
+          `💰 ${price}\n` +
+          `${url}\n\n`;
       });
 
-      await sendTelegram(token, chatId, messageText);
+      await sendTelegram(
+        token,
+        chatId,
+        resultMessage
+      );
 
       delete sessions[chatId];
+
       return ok();
     }
+
+    // =========================
+    // DEFAULT
+    // =========================
 
     await sendTelegram(
       token,
@@ -113,21 +152,38 @@ async function searchApify(product) {
     return [];
   }
 
-  const actorId = "maroon_trio/olx-ua-scraper-parser";
+  // تحويل اسم المنتج إلى جزء من رابط بحث OLX
+  const searchSlug = product
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-");
+
+  const olxUrl =
+    `https://www.olx.ua/uk/elektronika/telefony-i-aksesuary/mobilnye-telefony-smartfony/q-${encodeURIComponent(searchSlug)}/`;
+
+  console.log("OLX SEARCH URL:", olxUrl);
+
+  const actorId =
+    "maroon_trio~olx-ua-scraper-parser";
+
+  const apiUrl =
+    `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items` +
+    `?token=${encodeURIComponent(apiToken)}`;
 
   const input = {
-    search: product,
+    url: olxUrl,
     maxItems: 10,
     proxyConfiguration: {
       useApifyProxy: true
     }
   };
 
-  const url =
-    `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items` +
-    `?token=${apiToken}`;
+  console.log(
+    "APIFY INPUT:",
+    JSON.stringify(input)
+  );
 
-  const response = await fetch(url, {
+  const response = await fetch(apiUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -135,17 +191,42 @@ async function searchApify(product) {
     body: JSON.stringify(input)
   });
 
+  const responseText = await response.text();
+
+  console.log(
+    "APIFY STATUS:",
+    response.status
+  );
+
+  console.log(
+    "APIFY RESPONSE:",
+    responseText
+  );
+
   if (!response.ok) {
-    const errorText = await response.text();
-    console.error("APIFY ERROR:", errorText);
+    console.error(
+      "APIFY ERROR:",
+      responseText
+    );
+
     return [];
   }
 
-  const data = await response.json();
+  try {
+    const data = JSON.parse(responseText);
 
-  console.log("APIFY RESULTS:", JSON.stringify(data));
+    return Array.isArray(data)
+      ? data
+      : [];
 
-  return Array.isArray(data) ? data : [];
+  } catch (error) {
+    console.error(
+      "APIFY JSON ERROR:",
+      error
+    );
+
+    return [];
+  }
 }
 
 
@@ -153,7 +234,11 @@ async function searchApify(product) {
 // TELEGRAM
 // =========================
 
-async function sendTelegram(token, chatId, text) {
+async function sendTelegram(
+  token,
+  chatId,
+  text
+) {
   const url =
     `https://api.telegram.org/bot${token}/sendMessage`;
 
@@ -170,7 +255,10 @@ async function sendTelegram(token, chatId, text) {
 
   const result = await response.text();
 
-  console.log("TELEGRAM RESPONSE:", result);
+  console.log(
+    "TELEGRAM RESPONSE:",
+    result
+  );
 }
 
 
