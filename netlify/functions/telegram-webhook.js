@@ -152,8 +152,7 @@ async function searchApify(product) {
     return [];
   }
 
-  const actorId =
-    "lowlanddata~olx-ua-scraper";
+  const actorId = "lowlanddata~olx-ua-scraper";
 
   const apiUrl =
     `https://api.apify.com/v2/acts/${actorId}/runs` +
@@ -204,14 +203,17 @@ async function searchApify(product) {
   try {
     const data = JSON.parse(responseText);
 
+    const runId = data.data.id;
+    const datasetId = data.data.defaultDatasetId;
+
     console.log(
       "APIFY RUN ID:",
-      data.id
+      runId
     );
 
     console.log(
       "APIFY DATASET ID:",
-      data.defaultDatasetId
+      datasetId
     );
 
     return [];
