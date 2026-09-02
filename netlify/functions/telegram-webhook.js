@@ -171,13 +171,12 @@ async function searchApify(product) {
     `?token=${encodeURIComponent(apiToken)}`;
 
   const input = {
-  searchQuery: product,
+  url: olxUrl,
   maxListings: 10,
-  proxy: {
+  proxyConfiguration: {
     useApifyProxy: true
   }
 };
-
   console.log(
     "APIFY INPUT:",
     JSON.stringify(input)
