@@ -2,19 +2,16 @@
 // TRADE AGENT SMART
 // TELEGRAM WEBHOOK
 // ======================================================
-
-const { getStore } = require("@netlify/blobs");
+const {
+  connectLambda,
+  getStore,
+} = require("@netlify/blobs");
 
 // ------------------------------------------------------
 // Netlify Blobs
 // ------------------------------------------------------
+let sessionsStore;
 
-const sessionsStore = getStore(
-  "trade-agent-sessions",
-  {
-    consistency: "strong",
-  }
-);
 
 // ------------------------------------------------------
 // Telegram
@@ -271,10 +268,18 @@ function formatPurchaseRequest(
 // ------------------------------------------------------
 // Main Telegram handler
 // ------------------------------------------------------
-
 exports.handler = async function (
   event
 ) {
+  connectLambda(event);
+
+  sessionsStore = getStore(
+    "trade-agent-sessions",
+    {
+      consistency: "strong",
+    }
+  );
+
   const token =
     process.env.TELEGRAM_BOT_TOKEN;
 
