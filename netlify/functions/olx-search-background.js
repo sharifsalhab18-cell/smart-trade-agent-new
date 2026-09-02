@@ -1402,3 +1402,516 @@ function calculateMarketOpinion(
     `(متوسط السوق الظاهر ≈ ${Math.round(median)} )`
   );
 }
+// ------------------------------------------------------
+// Purchase request search
+// ------------------------------------------------------
+
+async function searchPurchaseRequests(
+  chatId,
+  token
+) {
+  console.log(
+    "PURCHASE SEARCH START:",
+    chatId
+  );
+
+  const queries =
+    getPurchaseQueries();
+
+  const jobs =
+    queries.map(
+      query =>
+        async () => {
+          console.log(
+            "PURCHASE QUERY:",
+            query
+          );
+
+          return runApifySearch(
+            query,
+            20
+          );
+        }
+    );
+
+  const rawItems =
+    await runWithConcurrency(
+      jobs,
+      4
+    );
+
+  console.log(
+    "PURCHASE RAW ITEMS:",
+    rawItems.length
+  );
+
+  const unique =
+    new Map();
+
+  for (
+    const item of rawItems
+  ) {
+    if (
+      !isPurchaseRequest(item)
+    ) {
+      continue;
+    }
+
+    const key =
+      getDuplicateKey(item);
+
+    if (
+      !unique.has(key)
+    ) {
+      const detected =
+        getDetectedProduct(item);
+
+      const prepared = {
+        ...item,
+
+        requestSearchProduct:
+          detected
+            ? detected.product
+            : "",
+
+        exactProduct:
+          detected
+            ? detected.product
+            : "",
+
+        normalizedProduct:
+          detected
+            ? detected.product
+            : "",
+
+        searchSource:
+          "OLX",
+      };
+
+      unique.set(
+        key,
+        prepared
+      );
+    }
+  }
+
+  const results =
+    Array.from(
+      unique.values()
+    );
+
+  console.log(
+    "PURCHASE FINAL RESULTS:",
+    results.length
+  );
+
+  const session =
+    await sessionsStore.get(
+      `chat-${chatId}`,
+      {
+        type: "json",
+        consistency: "strong"
+      }
+    );
+
+  const updatedSession =
+    session || {
+      step: "idle",
+      purchaseRequests: [],
+      selectedRequest: null,
+      selectedNumber: null,
+    };
+
+  updatedSession.purchaseRequests =
+    results;
+
+  updatedSession.selectedRequest =
+    null;
+
+  updatedSession.selectedNumber =
+    null;
+
+  updatedSession.step =
+    results.length
+      ? "waitingForSelection"
+      : "idle";
+
+  updatedSession.updatedAt =
+    Date.now();
+
+  await sessionsStore.setJSON(
+    `chat-${chatId}`,
+    updatedSession
+  );
+
+  if (!results.length) {
+    await sendTelegram(
+      token,
+      chatId,
+      "⚠️ انتهى البحث في OLX، لكن لم يتم العثور على طلبات شراء مطابقة للفئات المطلوبة.\n\n" +
+      "يمكنك إعادة المحاولة بإرسال:\n" +
+      "/search"
+    );
+
+    return;
+  }
+
+  let message =
+    "✅ انتهى البحث عن طلبات الشراء.\n\n" +
+    `وجد الوكيل ${results.length} طلبًا.\n\n`;
+
+  for (
+    let i = 0;
+    i < results.length;
+    i++
+  ) {
+    message +=
+      formatPurchaseRequest(
+        results[i],
+        i + 1
+      );
+
+    message +=
+      "\n━━━━━━━━━━━━━━\n\n";
+  }
+
+  message +=
+    "📌 أرسل رقم الطلب الذي تريد اختياره.";
+
+  await sendLongTelegram(
+    token,
+    chatId,
+    message
+  );
+}
+// ------------------------------------------------------
+// Seller search
+// ------------------------------------------------------
+
+async function searchSellers(
+  chatId,
+  token,
+  selected
+) {
+  console.log(
+    "SELLER SEARCH START:",
+    chatId,
+    JSON.stringify(selected)
+  );
+
+  const queries =
+    buildSellerQueries(
+      selected
+    );
+
+  console.log(
+    "SELLER QUERIES:",
+    queries
+  );
+
+  const jobs =
+    queries.map(
+      query =>
+        async () => {
+          return runApifySearch(
+            query,
+            25
+          );
+        }
+    );
+
+  const rawItems =
+    await runWithConcurrency(
+      jobs,
+      4
+    );
+
+  console.log(
+    "SELLER RAW ITEMS:",
+    rawItems.length
+  );
+
+  const unique =
+    new Map();
+
+  for (
+    const item of rawItems
+  ) {
+    if (
+      !isSellerListing(
+        item,
+        selected
+      )
+    ) {
+      continue;
+    }
+
+    const key =
+      getDuplicateKey(item);
+
+    if (
+      !unique.has(key)
+    ) {
+      unique.set(
+        key,
+        item
+      );
+    }
+  }
+
+  const results =
+    Array.from(
+      unique.values()
+    );
+
+  console.log(
+    "SELLER FINAL RESULTS:",
+    results.length
+  );
+
+  const session =
+    await sessionsStore.get(
+      `chat-${chatId}`,
+      {
+        type: "json",
+        consistency: "strong"
+      }
+    );
+
+  const updatedSession =
+    session || {
+      step: "idle",
+      purchaseRequests: [],
+      selectedRequest:
+        selected,
+      selectedNumber: null,
+    };
+
+  updatedSession.step =
+    "waitingForSellerCommand";
+
+  updatedSession.selectedRequest =
+    selected;
+
+  updatedSession.sellerResults =
+    results;
+
+  updatedSession.updatedAt =
+    Date.now();
+
+  await sessionsStore.setJSON(
+    `chat-${chatId}`,
+    updatedSession
+  );
+  if (!results.length) {
+    await sendTelegram(
+      token,
+      chatId,
+      "⚠️ انتهى البحث في OLX، لكن لم يتم العثور على إعلانات بيع مطابقة للصنف المطلوب.\n\n" +
+      "يمكنك العودة واختيار طلب آخر بإرسال:\n" +
+      "/search"
+    );
+
+    return;
+  }
+
+  const product =
+    selected.requestSearchProduct ||
+    selected.exactProduct ||
+    selected.title ||
+    "الصنف المطلوب";
+
+  let message =
+    "✅ انتهى البحث عن البائعين.\n\n" +
+    `📦 الصنف المطلوب: ${product}\n\n` +
+    `وجد الوكيل ${results.length} إعلان بيع.\n\n`;
+
+  for (
+    let i = 0;
+    i < results.length;
+    i++
+  ) {
+    message +=
+      formatSellerListing(
+        results[i],
+        i + 1
+      );
+
+    message +=
+      calculateMarketOpinion(
+        results[i],
+        results
+      );
+
+    message +=
+      "\n━━━━━━━━━━━━━━\n\n";
+  }
+
+  message +=
+    "ℹ️ تقييم السعر استرشادي فقط ويعتمد على الإعلانات التي ظهرت في البحث.\n\n" +
+    "🤝 أنت تتواصل بنفسك مع المشتري والبائع وتتفاوض وتغلق الصفقة.";
+
+  await sendLongTelegram(
+    token,
+    chatId,
+    message
+  );
+}
+// ------------------------------------------------------
+// Main background handler
+// ------------------------------------------------------
+
+exports.handler = async function (
+  event
+) {
+  const token =
+    process.env.TELEGRAM_BOT_TOKEN;
+
+  if (!token) {
+    console.error(
+      "TELEGRAM_BOT_TOKEN missing."
+    );
+
+    return {
+      statusCode: 500,
+      body:
+        "TELEGRAM_BOT_TOKEN missing",
+    };
+  }
+
+  let body = {};
+
+  try {
+    body =
+      JSON.parse(
+        event.body || "{}"
+      );
+  } catch (error) {
+    console.error(
+      "INVALID JSON:",
+      error.message
+    );
+
+    return {
+      statusCode: 400,
+      body:
+        "Invalid JSON",
+    };
+  }
+
+  const chatId =
+    body.chatId;
+
+  const mode =
+    body.mode;
+
+  const request =
+    body.request || null;
+
+  if (!chatId || !mode) {
+    console.error(
+      "Missing chatId or mode."
+    );
+
+    return {
+      statusCode: 400,
+      body:
+        "Missing chatId or mode",
+    };
+  }
+
+  console.log(
+    "BACKGROUND FUNCTION START:",
+    JSON.stringify({
+      chatId,
+      mode,
+    })
+  );
+
+  if (
+    mode === "purchaseRequests"
+  ) {
+    searchPurchaseRequests(
+      chatId,
+      token
+    ).catch(
+      async error => {
+        console.error(
+          "PURCHASE BACKGROUND FAILED:",
+          error
+        );
+
+        try {
+          await sendTelegram(
+            token,
+            chatId,
+            "❌ حدث خطأ أثناء البحث عن طلبات الشراء.\n\n" +
+            error.message
+          );
+        } catch (
+          telegramError
+        ) {
+          console.error(
+            "TELEGRAM ERROR:",
+            telegramError
+          );
+        }
+      }
+    );
+  }
+
+  else if (
+    mode === "seller"
+  ) {
+    if (!request) {
+      return {
+        statusCode: 400,
+        body:
+          "Missing selected request",
+      };
+    }
+
+    searchSellers(
+      chatId,
+      token,
+      request
+    ).catch(
+      async error => {
+        console.error(
+          "SELLER BACKGROUND FAILED:",
+          error
+        );
+
+        try {
+          await sendTelegram(
+            token,
+            chatId,
+            "❌ حدث خطأ أثناء البحث عن البائعين.\n\n" +
+            error.message
+          );
+        } catch (
+          telegramError
+        ) {
+          console.error(
+            "TELEGRAM ERROR:",
+            telegramError
+          );
+        }
+      }
+    );
+  }
+
+  else {
+    return {
+      statusCode: 400,
+      body:
+        "Unknown search mode",
+    };
+  }
+
+  return {
+    statusCode: 202,
+    body:
+      "Background search started",
+  };
+};
