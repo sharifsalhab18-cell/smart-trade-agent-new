@@ -814,14 +814,24 @@ async function startApifyRun(
     JSON.stringify(input)
   );
 
-  const response =
-    await fetch(url, {
-      method: "POST",
-      headers:
-        apifyHeaders(),
-      body:
-        JSON.stringify(input),
-    });
+  let response;
+
+try {
+  response = await fetch(url, {
+    method: "POST",
+    headers:
+      apifyHeaders(),
+    body:
+      JSON.stringify(input),
+  });
+} catch (error) {
+  console.error(
+    "APIFY FETCH ERROR:",
+    error
+  );
+
+  throw error;
+}
 
   const text =
     await response.text();
