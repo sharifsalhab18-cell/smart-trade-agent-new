@@ -156,7 +156,7 @@ async function searchApify(product) {
     "lowlanddata~olx-ua-scraper";
 
   const apiUrl =
-    `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items` +
+    `https://api.apify.com/v2/acts/${actorId}/runs` +
     `?token=${encodeURIComponent(apiToken)}`;
 
   const input = {
@@ -204,9 +204,17 @@ async function searchApify(product) {
   try {
     const data = JSON.parse(responseText);
 
-    return Array.isArray(data)
-      ? data
-      : [];
+    console.log(
+      "APIFY RUN ID:",
+      data.id
+    );
+
+    console.log(
+      "APIFY DATASET ID:",
+      data.defaultDatasetId
+    );
+
+    return [];
 
   } catch (error) {
     console.error(
@@ -217,7 +225,6 @@ async function searchApify(product) {
     return [];
   }
 }
-
 
 // =========================
 // TELEGRAM
