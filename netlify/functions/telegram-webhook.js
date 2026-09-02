@@ -272,13 +272,10 @@ exports.handler = async function (
   event
 ) {
   connectLambda(event);
-
-  sessionsStore = getStore(
-    "trade-agent-sessions",
-    {
-      consistency: "strong",
-    }
-  );
+sessionsStore = getStore(
+  "trade-agent-sessions"
+);
+  
 
   const token =
     process.env.TELEGRAM_BOT_TOKEN;
