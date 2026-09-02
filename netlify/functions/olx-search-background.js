@@ -1514,7 +1514,7 @@ async function searchPurchaseRequests(
       `chat-${chatId}`,
       {
         type: "json",
-        consistency: "strong"
+        
       }
     );
 
