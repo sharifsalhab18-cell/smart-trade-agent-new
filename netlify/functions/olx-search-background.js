@@ -1502,7 +1502,10 @@ async function searchPurchaseRequests(
     "PURCHASE RAW ITEMS:",
     rawItems.length
   );
-
+console.log(
+  "PURCHASE SAMPLE ITEM:",
+  JSON.stringify(rawItems[0], null, 2)
+);
   const unique =
     new Map();
 
