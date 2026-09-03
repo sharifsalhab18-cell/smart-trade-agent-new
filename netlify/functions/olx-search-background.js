@@ -1502,9 +1502,31 @@ async function searchPurchaseRequests(
     "PURCHASE RAW ITEMS:",
     rawItems.length
   );
+const purchaseSamples = rawItems.filter(item => {
+  const title = String(
+    item.title || item.name || ""
+  ).toLowerCase();
+
+  return (
+    title.includes("куплю") ||
+    title.includes("ищу") ||
+    title.includes("нужен") ||
+    title.includes("нужна") ||
+    title.includes("нужно") ||
+    title.includes("шукаю") ||
+    title.includes("потрібен") ||
+    title.includes("потрібна") ||
+    title.includes("потрібно")
+  );
+});
+
 console.log(
-  "PURCHASE SAMPLE ITEM:",
-  JSON.stringify(rawItems[0], null, 2)
+  "PURCHASE INTENT SAMPLES:",
+  JSON.stringify(
+    purchaseSamples.slice(0, 5),
+    null,
+    2
+  )
 );
   const unique =
     new Map();
