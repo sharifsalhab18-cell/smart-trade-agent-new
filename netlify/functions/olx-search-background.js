@@ -421,6 +421,7 @@ function isPurchaseRequest(
     return false;
   }
 
+  // يجب أن يكون المنتج ضمن الفئات المطلوبة
   const product =
     detectProduct(text);
 
@@ -428,7 +429,7 @@ function isPurchaseRequest(
     return false;
   }
 
-  // يجب أن يكون العنوان نفسه يدل بوضوح على أن الشخص يريد الشراء
+  // كلمات تدل على أن الشخص يبحث عن شراء
   const purchasePatterns = [
     "куплю",
     "хочу купить",
@@ -446,21 +447,36 @@ function isPurchaseRequest(
     "придбаю"
   ];
 
-  const titleHasPurchaseIntent =
-    containsAny(
-      title,
-      purchasePatterns
-    );
+  // نبحث عن نية الشراء في العنوان والوصف
+  const hasPurchaseIntent =
+  containsAny(
+    text,
+    purchasePatterns
+  );
 
-  if (!titleHasPurchaseIntent) {
-    return false;
-  }
+const searchQuery =
+  normalizeText(
+    item.purchaseSearchQuery || ""
+  );
 
-  // استبعاد إعلانات البيع
+const queryHasPurchaseIntent =
+  containsAny(
+    searchQuery,
+    purchasePatterns
+  );
+
+if (
+  !hasPurchaseIntent &&
+  !queryHasPurchaseIntent
+) {
+  return false;
+}
+  // استبعاد إعلانات البيع والمتاجر
   const sellerPatterns = [
     "продам",
     "продажа",
     "продаю",
+    "продається",
     "продається",
     "в наличии",
     "є в наявності",
@@ -473,16 +489,53 @@ function isPurchaseRequest(
     "грн",
     "uah",
     "телефоны в наличии",
-    "телефони в наявності"
+    "телефони в наявності",
+    "купить у нас",
+    "заказать",
+    "замовити"
   ];
 
-  const looksLikeSeller =
+  if (
     containsAny(
       text,
       sellerPatterns
-    );
+    )
+  ) {
+    return false;
+  }
 
-  if (looksLikeSeller) {
+  // استبعاد الملحقات والخدمات غير المطلوبة
+  const excludedPatterns = [
+    "чохол",
+    "чехол",
+    "case",
+    "дисплей",
+    "экран",
+    "екран",
+    "стекло",
+    "скло",
+    "защитное стекло",
+    "захисне скло",
+    "подписка",
+    "підписка",
+    "аккаунт",
+    "акаунт",
+    "игра",
+    "гра",
+    "ремонт",
+    "ремонтую",
+    "запчасти",
+    "запчастина",
+    "аксессуар",
+    "аксесуари"
+  ];
+
+  if (
+    containsAny(
+      text,
+      excludedPatterns
+    )
+  ) {
     return false;
   }
 
@@ -1491,13 +1544,27 @@ async function searchPurchaseRequests(
           );
         }
     );
-
-  const rawItems =
+const rawItems =
+  (
     await runWithConcurrency(
       jobs,
       4
-    );
+    )
+  ).flatMap(
+    (items, index) => {
+      const query =
+        queries[index];
 
+      return (items || []).map(
+        item => ({
+          ...item,
+          purchaseSearchQuery:
+            query
+        })
+      );
+    }
+  );
+  
   console.log(
     "PURCHASE RAW ITEMS:",
     rawItems.length
