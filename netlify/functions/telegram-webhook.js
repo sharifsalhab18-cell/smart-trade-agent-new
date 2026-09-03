@@ -534,11 +534,15 @@ sessionsStore = getStore(
     // --------------------------------------------------
     // SEARCH SELLER
     // --------------------------------------------------
-
-    if (
-      session.step ===
-      "waitingForSellerCommand"
-    ) {
+if (
+  session.step ===
+    "waitingForSellerCommand" ||
+  text === "ابحث عن بائع" ||
+  text === "بحث عن بائع" ||
+  text === "بائع" ||
+  text === "/seller"
+) {
+    
       const sellerCommand =
         text === "ابحث عن بائع" ||
         text === "بحث عن بائع" ||
