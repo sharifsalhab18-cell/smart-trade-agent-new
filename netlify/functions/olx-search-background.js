@@ -397,8 +397,25 @@ function itemText(
 function isPurchaseRequest(
   item
 ) {
+  const title =
+    normalizeText(
+      item.title ||
+      item.name ||
+      ""
+    );
+
+  const description =
+    normalizeText(
+      item.description ||
+      item.text ||
+      item.details ||
+      ""
+    );
+
   const text =
-    itemText(item);
+    normalizeText(
+      `${title} ${description}`
+    );
 
   if (!text) {
     return false;
@@ -411,20 +428,58 @@ function isPurchaseRequest(
     return false;
   }
 
-  const hasIntent =
+  // يجب أن يكون العنوان نفسه يدل بوضوح على أن الشخص يريد الشراء
+  const purchasePatterns = [
+    "куплю",
+    "хочу купить",
+    "хочу приобрести",
+    "ищу",
+    "нужен",
+    "нужна",
+    "нужно",
+    "потрібен",
+    "потрібна",
+    "потрібно",
+    "шукаю",
+    "хочу купити",
+    "хочу придбати",
+    "придбаю"
+  ];
+
+  const titleHasPurchaseIntent =
     containsAny(
-      text,
-      PURCHASE_INTENT_WORDS
+      title,
+      purchasePatterns
     );
 
-  if (!hasIntent) {
+  if (!titleHasPurchaseIntent) {
     return false;
   }
+
+  // استبعاد إعلانات البيع
+  const sellerPatterns = [
+    "продам",
+    "продажа",
+    "продаю",
+    "продається",
+    "в наличии",
+    "є в наявності",
+    "доставка",
+    "магазин",
+    "опт",
+    "новый товар",
+    "новинка",
+    "цена",
+    "грн",
+    "uah",
+    "телефоны в наличии",
+    "телефони в наявності"
+  ];
 
   const looksLikeSeller =
     containsAny(
       text,
-      SELLER_WORDS
+      sellerPatterns
     );
 
   if (looksLikeSeller) {
