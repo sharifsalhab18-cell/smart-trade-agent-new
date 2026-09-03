@@ -15,8 +15,7 @@ let sessionsStore;
 // ------------------------------------------------------
 
 const APIFY_ACTOR =
-  "lowlanddata/olx-ua-scraper";
-
+  "lowlanddata~olx-ua-scraper";
 const MAX_TELEGRAM_LENGTH = 3800;
 
 const PURCHASE_INTENT_WORDS = [
