@@ -1528,6 +1528,12 @@ console.log(
     2
   )
 );
+console.log(
+  "PURCHASE TITLES SAMPLE:",
+  rawItems
+    .slice(0, 20)
+    .map(item => item.title)
+);
   const unique =
     new Map();
 
