@@ -1530,32 +1530,50 @@ async function searchPurchaseRequests(
     getPurchaseQueries();
 
   const jobs =
-    queries.map(
-      query =>
-        async () => {
-          console.log(
-            "PURCHASE QUERY:",
-            query
-          );
+  queries.map(
+    query =>
+      async () => {
+        console.log(
+          "PURCHASE QUERY:",
+          query
+        );
 
-          return runApifySearch(
+        const items =
+          await runApifySearch(
             query,
             20
           );
-        }
-    );
+
+        return (Array.isArray(items)
+          ? items
+          : []
+        ).map(
+          item => ({
+            ...item,
+            purchaseSearchQuery:
+              query
+          })
+        );
+      }
+  );
+const jobResults =
+  await runWithConcurrency(
+    jobs,
+    4
+  );
+
 const rawItems =
-  (
-    await runWithConcurrency(
-      jobs,
-      4
-    )
-  ).flatMap(
-    (items, index) => {
+  jobResults.flatMap(
+    (result, index) => {
       const query =
         queries[index];
 
-      return (items || []).map(
+      const items =
+        Array.isArray(result)
+          ? result
+          : [];
+
+      return items.map(
         item => ({
           ...item,
           purchaseSearchQuery:
@@ -1769,9 +1787,22 @@ async function searchSellers(
     queries.map(
       query =>
         async () => {
-          return runApifySearch(
-            query,
-            25
+          const items =
+            await runApifySearch(
+              query,
+              25
+            );
+
+          return (
+            Array.isArray(items)
+              ? items
+              : []
+          ).map(
+            item => ({
+              ...item,
+              purchaseSearchQuery:
+                query
+            })
           );
         }
     );
