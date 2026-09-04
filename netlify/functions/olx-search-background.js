@@ -1,8 +1,3 @@
-// ======================================================
-// TRADE AGENT SMART
-// OLX SEARCH BACKGROUND FUNCTION
-// ======================================================
-
 const {
   connectLambda,
   getStore,
@@ -10,349 +5,193 @@ const {
 
 let sessionsStore;
 
-// ------------------------------------------------------
-// Constants
-// ------------------------------------------------------
-
 const APIFY_ACTOR =
   "lowlanddata~olx-ua-scraper";
-const MAX_TELEGRAM_LENGTH = 3800;
 
-const PURCHASE_INTENT_WORDS = [
-  "куплю",
-  "купить",
-  "ищу",
-  "нужен",
-  "нужна",
-  "нужно",
-  "потрібен",
-  "потрібна",
-  "потрібно",
-  "шукаю",
-  "хочу купити",
-  "хочу придбати",
-  "придбаю",
-];
 
-const SELLER_WORDS = [
-  "продам",
-  "продажа",
-  "продаю",
-  "продається",
-  "продаю",
-  "в наличии",
-  "є в наявності",
-  "доставка",
-  "магазин",
-  "опт",
-  "новый товар",
-  "новинка",
-];
+// ============================================================
+// TEXT HELPERS
+// ============================================================
 
-// ------------------------------------------------------
-// Telegram
-// ------------------------------------------------------
-
-async function sendTelegram(
-  token,
-  chatId,
-  text
-) {
-  const url =
-    `https://api.telegram.org/bot${token}/sendMessage`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: String(text || ""),
-      disable_web_page_preview: true,
-    }),
-  });
-
-  const result =
-    await response.text();
-
-  console.log(
-    "TELEGRAM RESPONSE:",
-    response.status,
-    result
-  );
-
-  return result;
-}
-
-// ------------------------------------------------------
-// Telegram long message splitter
-// ------------------------------------------------------
-
-function splitMessage(
-  text,
-  maxLength = MAX_TELEGRAM_LENGTH
-) {
-  const value =
-    String(text || "");
-
-  if (value.length <= maxLength) {
-    return [value];
-  }
-
-  const parts = [];
-  let remaining = value;
-
-  while (
-    remaining.length > maxLength
-  ) {
-    let cut =
-      remaining.lastIndexOf(
-        "\n",
-        maxLength
-      );
-
-    if (
-      cut < 1000
-    ) {
-      cut = maxLength;
-    }
-
-    parts.push(
-      remaining.slice(0, cut)
-    );
-
-    remaining =
-      remaining.slice(cut)
-      .trimStart();
-  }
-
-  if (remaining) {
-    parts.push(remaining);
-  }
-
-  return parts;
-}
-
-async function sendLongTelegram(
-  token,
-  chatId,
-  text
-) {
-  const parts =
-    splitMessage(text);
-
-  for (const part of parts) {
-    await sendTelegram(
-      token,
-      chatId,
-      part
-    );
-  }
-}
-
-// ------------------------------------------------------
-// Text helpers
-// ------------------------------------------------------
-
-function normalizeText(
-  value
-) {
-  return String(
-    value || ""
-  )
+function normalizeText(value) {
+  return String(value || "")
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function containsAny(
-  text,
-  words
-) {
-  const value =
-    normalizeText(text);
+function containsAny(text, words) {
+  const value = normalizeText(text);
 
-  return words.some(
-    word =>
-      value.includes(
-        normalizeText(word)
-      )
+  return words.some(word =>
+    value.includes(
+      normalizeText(word)
+    )
   );
 }
 
-// ------------------------------------------------------
-// Product detection
-// ------------------------------------------------------
 
-function detectProduct(
-  text
-) {
+// ============================================================
+// NORMALIZE APIFY RESULT
+// ============================================================
+
+function normalizeItems(data) {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (data && Array.isArray(data.items)) {
+    return data.items;
+  }
+
+  if (
+    data &&
+    data.data &&
+    Array.isArray(data.data.items)
+  ) {
+    return data.data.items;
+  }
+
+  if (
+    data &&
+    data.data &&
+    Array.isArray(data.data.results)
+  ) {
+    return data.data.results;
+  }
+
+  if (
+    data &&
+    Array.isArray(data.results)
+  ) {
+    return data.results;
+  }
+
+  if (
+    data &&
+    typeof data === "object" &&
+    (
+      data.title ||
+      data.name ||
+      data.url ||
+      data.listingId
+    )
+  ) {
+    return [data];
+  }
+
+  return [];
+}
+
+
+// ============================================================
+// PRODUCT DETECTION
+// ============================================================
+
+function detectProduct(text) {
   const value =
     normalizeText(text);
 
+
+  // ----------------------------------------------------------
   // iPhone 12 and above
+  // ----------------------------------------------------------
+
   const iphoneMatch =
     value.match(
-      /\biphone\s*(\d{2})(?:\s*(pro\s*max|pro|plus|mini))?/i
+      /\biphone\s*(1[2-9]|[2-9][0-9])\b/i
     );
 
   if (iphoneMatch) {
-    const model =
-      Number(iphoneMatch[1]);
-
-    if (model >= 12) {
-      return {
-        category: "iPhone",
-        product:
-          `iPhone ${iphoneMatch[1]}` +
-          (
-            iphoneMatch[2]
-              ? ` ${iphoneMatch[2]}`
-              : ""
-          ),
-      };
-    }
+    return {
+      category: "iPhone",
+      product:
+        "iPhone " +
+        iphoneMatch[1],
+    };
   }
 
-  // iPhone written with Apple wording
-  if (
-    value.includes("айфон") ||
-    value.includes("iphone")
-  ) {
-    const numberMatch =
-      value.match(
-        /\b(?:iphone|айфон)\s*(\d{2})/i
-      );
 
-    if (
-      numberMatch &&
-      Number(numberMatch[1]) >= 12
-    ) {
-      return {
-        category: "iPhone",
-        product:
-          `iPhone ${numberMatch[1]}`,
-      };
-    }
-  }
+  // ----------------------------------------------------------
+  // Samsung Galaxy S21 and above
+  // ----------------------------------------------------------
 
-  // Samsung Galaxy S21+
   const samsungMatch =
     value.match(
-      /\b(?:samsung\s*)?(?:galaxy\s*)?s(\d{2})(?:\s*(ultra|plus|\+|fe))?/i
-    );
-
-  if (samsungMatch) {
-    const model =
-      Number(samsungMatch[1]);
-
-    if (model >= 21) {
-      return {
-        category:
-          "Samsung Galaxy",
-        product:
-          `Samsung Galaxy S${samsungMatch[1]}` +
-          (
-            samsungMatch[2]
-              ? ` ${samsungMatch[2]}`
-              : ""
-          ),
-      };
-    }
-  }
-
-  // Samsung in Ukrainian/Russian spelling
-  const samsungAlt =
-    value.match(
-      /\b(?:самсунг|самсун)\s*(?:галакси|galaxy)?\s*s?(\d{2})/i
+      /\b(?:samsung\s*)?(?:galaxy\s*)?s(2[1-9]|[3-9][0-9])\b/i
     );
 
   if (
-    samsungAlt &&
-    Number(samsungAlt[1]) >= 21
+    samsungMatch &&
+    (
+      value.includes("samsung") ||
+      value.includes("galaxy")
+    )
   ) {
     return {
       category:
         "Samsung Galaxy",
       product:
-        `Samsung Galaxy S${samsungAlt[1]}`,
+        "Samsung Galaxy S" +
+        samsungMatch[1],
     };
   }
 
+
+  // ----------------------------------------------------------
   // PlayStation 5
+  // ----------------------------------------------------------
+
   if (
+    value.includes("ps5") ||
+    value.includes("ps 5") ||
     value.includes("playstation 5") ||
     value.includes("play station 5") ||
-    value.includes("ps5") ||
     value.includes("пс5") ||
-    value.includes("плейстейшен 5")
+    value.includes("пс 5") ||
+    value.includes("плейстейшн 5")
   ) {
-    let variant = "";
-
-    if (
-      value.includes("digital") ||
-      value.includes("цифров") ||
-      value.includes("digital edition")
-    ) {
-      variant = " Digital";
-    } else if (
-      value.includes("disc") ||
-      value.includes("дисковод") ||
-      value.includes("дисков")
-    ) {
-      variant = " Disc";
-    }
-
     return {
       category:
         "PlayStation 5",
       product:
-        `PlayStation 5${variant}`,
+        "PlayStation 5",
     };
   }
 
+
+  // ----------------------------------------------------------
   // MacBook
+  // ----------------------------------------------------------
+
   if (
     value.includes("macbook") ||
-    value.includes("макбук")
+    value.includes("mac book") ||
+    value.includes("макбук") ||
+    value.includes("мак бук")
   ) {
-    let product =
-      "MacBook";
-
-    if (
-      value.includes("air")
-    ) {
-      product += " Air";
-    } else if (
-      value.includes("pro")
-    ) {
-      product += " Pro";
-    }
-
-    const chip =
-      value.match(
-        /\b(m[1-5])\b/i
-      );
-
-    if (chip) {
-      product +=
-        ` ${chip[1].toUpperCase()}`;
-    }
-
     return {
-      category: "MacBook",
-      product,
+      category:
+        "MacBook",
+      product:
+        "MacBook",
     };
   }
 
+
+  // ----------------------------------------------------------
   // Gaming Laptop
+  // ----------------------------------------------------------
+
   if (
     value.includes("gaming laptop") ||
     value.includes("игровой ноутбук") ||
     value.includes("игровой ноут") ||
+    value.includes("геймерский ноутбук") ||
+    value.includes("геймерский ноут") ||
     value.includes("ігровий ноутбук") ||
-    value.includes("ігровий ноут")
+    value.includes("ігровий ноут") ||
+    value.includes("ігровий ноутбук")
   ) {
     return {
       category:
@@ -362,41 +201,17 @@ function detectProduct(
     };
   }
 
+
   return null;
 }
 
-// ------------------------------------------------------
-// Extract text from an OLX item
-// ------------------------------------------------------
 
-function itemText(
-  item
-) {
-  const fields = [
-    item.title,
-    item.name,
-    item.description,
-    item.text,
-    item.details,
-    item.category,
-    item.product,
-    item.searchQuery,
-  ];
+// ============================================================
+// PURCHASE REQUEST FILTER
+// ============================================================
 
-  return normalizeText(
-    fields
-      .filter(Boolean)
-      .join(" ")
-  );
-}
+function isPurchaseRequest(item) {
 
-// ------------------------------------------------------
-// Purchase request validation
-// ------------------------------------------------------
-
-function isPurchaseRequest(
-  item
-) {
   const title =
     normalizeText(
       item.title ||
@@ -412,16 +227,27 @@ function isPurchaseRequest(
       ""
     );
 
+  const searchQuery =
+    normalizeText(
+      item.purchaseSearchQuery ||
+      ""
+    );
+
   const text =
     normalizeText(
       `${title} ${description}`
     );
 
+
   if (!text) {
     return false;
   }
 
-  // يجب أن يكون المنتج ضمن الفئات المطلوبة
+
+  // ----------------------------------------------------------
+  // Product must belong to our target categories
+  // ----------------------------------------------------------
+
   const product =
     detectProduct(text);
 
@@ -429,7 +255,11 @@ function isPurchaseRequest(
     return false;
   }
 
-  // كلمات تدل على أن الشخص يبحث عن شراء
+
+  // ----------------------------------------------------------
+  // Words showing that the person wants to BUY
+  // ----------------------------------------------------------
+
   const purchasePatterns = [
     "куплю",
     "хочу купить",
@@ -438,6 +268,7 @@ function isPurchaseRequest(
     "нужен",
     "нужна",
     "нужно",
+
     "потрібен",
     "потрібна",
     "потрібно",
@@ -447,53 +278,54 @@ function isPurchaseRequest(
     "придбаю"
   ];
 
-  // نبحث عن نية الشراء في العنوان والوصف
+
   const hasPurchaseIntent =
-  containsAny(
-    text,
-    purchasePatterns
-  );
+    containsAny(
+      text,
+      purchasePatterns
+    );
 
-const searchQuery =
-  normalizeText(
-    item.purchaseSearchQuery || ""
-  );
 
-const queryHasPurchaseIntent =
-  containsAny(
-    searchQuery,
-    purchasePatterns
-  );
+  
+  // يجب أن تكون نية الشراء موجودة في إعلان الشخص نفسه.
+  // لا نعتمد على كلمة "куплю" الموجودة في استعلام البحث.
 
-if (
-  !hasPurchaseIntent &&
-  !queryHasPurchaseIntent
-) {
-  return false;
-}
-  // استبعاد إعلانات البيع والمتاجر
+  if (!hasPurchaseIntent) {
+    return false;
+  }
+
+  // ----------------------------------------------------------
+  // Reject seller advertisements
+  // ----------------------------------------------------------
+
   const sellerPatterns = [
     "продам",
     "продажа",
     "продаю",
     "продається",
-    "продається",
+    "продается",
+
     "в наличии",
     "є в наявності",
+
     "доставка",
     "магазин",
+    "магазин",
+
     "опт",
+    "оптом",
+
     "новый товар",
     "новинка",
-    "цена",
-    "грн",
-    "uah",
-    "телефоны в наличии",
-    "телефони в наявності",
+
     "купить у нас",
     "заказать",
-    "замовити"
+    "замовити",
+
+    "телефоны в наличии",
+    "телефони в наявності"
   ];
+
 
   if (
     containsAny(
@@ -504,31 +336,61 @@ if (
     return false;
   }
 
-  // استبعاد الملحقات والخدمات غير المطلوبة
+
+  // ----------------------------------------------------------
+  // Reject accessories / services / unrelated products
+  // ----------------------------------------------------------
+
   const excludedPatterns = [
     "чохол",
     "чехол",
     "case",
+
     "дисплей",
     "экран",
     "екран",
+
     "стекло",
     "скло",
+
     "защитное стекло",
     "захисне скло",
+
     "подписка",
     "підписка",
+
     "аккаунт",
     "акаунт",
+
     "игра",
     "гра",
+
     "ремонт",
     "ремонтую",
+
     "запчасти",
     "запчастина",
+
     "аксессуар",
-    "аксесуари"
+    "аксесуари",
+
+    "зарядка",
+    "зарядное устройство",
+
+    "чехлы",
+
+    "наушники",
+
+    "кабель",
+    "кабели",
+
+    "стекла для",
+
+    "ремонт телефона",
+    "ремонт iphone",
+    "ремонт samsung"
   ];
+
 
   if (
     containsAny(
@@ -539,362 +401,72 @@ if (
     return false;
   }
 
+
   return true;
 }
 
-// ------------------------------------------------------
-// Price extraction
-// ------------------------------------------------------
 
-function parsePrice(
-  item
-) {
-  const directFields = [
-    item.price,
-    item.priceValue,
-    item.priceAmount,
-  ];
+// ============================================================
+// GET DETECTED PRODUCT
+// ============================================================
 
-  for (
-    const value of directFields
-  ) {
-    if (
-      typeof value === "number" &&
-      value > 0
-    ) {
-      return value;
-    }
-  }
+function getDetectedProduct(item) {
 
-  const textFields = [
-    item.priceText,
-    item.price,
-  ];
-
-  for (
-    const value of textFields
-  ) {
-    if (!value) {
-      continue;
-    }
-
-    const text =
-      String(value);
-
-    // Price should contain currency
-    const match =
-      text.match(
-        /(\d[\d\s.,]{2,})\s*(грн|₴|uah|дол|usd|\$|євро|eur|€)/i
-      );
-
-    if (match) {
-      const number =
-        Number(
-          match[1]
-            .replace(/\s/g, "")
-            .replace(/,/g, "")
-            .replace(/\.(?=\d{3})/g, "")
-        );
-
-      if (
-        Number.isFinite(number) &&
-        number > 0
-      ) {
-        return number;
-      }
-    }
-  }
-
-  return null;
-}
-
-// ------------------------------------------------------
-// Generic item fields
-// ------------------------------------------------------
-
-function getTitle(
-  item
-) {
-  return (
+  const title =
     item.title ||
     item.name ||
-    item.product ||
-    "Без назви"
-  );
-}
+    "";
 
-function getUrl(
-  item
-) {
-  return (
-    item.url ||
-    item.link ||
-    item.webUrl ||
-    item.itemUrl ||
-    item.href ||
-    ""
-  );
-}
-
-function getLocation(
-  item
-) {
-  return (
-    item.location ||
-    item.city ||
-    item.region ||
-    item.address ||
-    ""
-  );
-}
-
-function getAuthor(
-  item
-) {
-  return (
-    item.author ||
-    item.user ||
-    item.seller ||
-    item.requester ||
-    item.owner ||
-    ""
-  );
-}
-
-function getDescription(
-  item
-) {
-  return (
+  const description =
     item.description ||
     item.text ||
     item.details ||
-    ""
-  );
-}
+    "";
 
-function getDate(
-  item
-) {
-  return (
-    item.date ||
-    item.postedAt ||
-    item.createdAt ||
-    item.publishedAt ||
-    ""
-  );
-}
-
-// ------------------------------------------------------
-// Product normalization
-// ------------------------------------------------------
-
-function getDetectedProduct(
-  item
-) {
   const text =
-    itemText(item);
+    `${title} ${description}`;
 
   return detectProduct(text);
 }
 
-// ------------------------------------------------------
-// Create stable duplicate key
-// ------------------------------------------------------
 
-function normalizeTitle(
-  title
-) {
-  return normalizeText(title)
-    .replace(
-      /[^a-zа-яіїєґ0-9]+/gi,
-      " "
-    )
-    .trim();
+// ============================================================
+// DUPLICATE KEY
+// ============================================================
+
+function getDuplicateKey(item) {
+
+  return String(
+    item.listingId ||
+    item.id ||
+    item.url ||
+    item.title ||
+    Math.random()
+  );
 }
 
-function getDuplicateKey(
-  item
-) {
-  const url =
-    getUrl(item);
 
-  if (url) {
-    return `url:${url}`;
-  }
-
-  const title =
-    normalizeTitle(
-      getTitle(item)
-    );
-
-  const location =
-    normalizeText(
-      getLocation(item)
-    );
-
-  return `text:${title}|${location}`;
-}
-
-// ------------------------------------------------------
-// Format purchase request
-// ------------------------------------------------------
-
-function formatPurchaseRequest(
-  item,
-  number
-) {
-  const detected =
-    getDetectedProduct(item);
-
-  const title =
-    getTitle(item);
-
-  const description =
-    getDescription(item);
-
-  const location =
-    getLocation(item);
-
-  const author =
-    getAuthor(item);
-
-  const date =
-    getDate(item);
-
-  const url =
-    getUrl(item);
-
-  const price =
-    item.price ||
-    item.priceText ||
-    "";
-
-  let text =
-    `${number}️⃣ ${title}\n`;
-
-  if (detected) {
-    text +=
-      `📦 الصنف: ${detected.product}\n`;
-  }
-
-  if (location) {
-    text +=
-      `📍 الموقع: ${location}\n`;
-  }
-
-  if (price) {
-    text +=
-      `💰 السعر المذكور: ${price}\n`;
-  }
-
-  if (author) {
-    text +=
-      `👤 صاحب الطلب: ${author}\n`;
-  }
-
-  if (date) {
-    text +=
-      `📅 التاريخ: ${date}\n`;
-  }
-
-  if (description) {
-    text +=
-      `📝 التفاصيل:\n${description}\n`;
-  }
-
-  if (url) {
-    text +=
-      `🔗 ${url}\n`;
-  }
-
-  return text;
-}
-
-// ------------------------------------------------------
-// Format seller listing
-// ------------------------------------------------------
-
-function formatSellerListing(
-  item,
-  number
-) {
-  const title =
-    getTitle(item);
-
-  const price =
-    item.price ||
-    item.priceText ||
-    "";
-
-  const location =
-    getLocation(item);
-
-  const author =
-    getAuthor(item);
-
-  const date =
-    getDate(item);
-
-  const description =
-    getDescription(item);
-
-  const url =
-    getUrl(item);
-
-  let text =
-    `${number}️⃣ ${title}\n`;
-
-  if (price) {
-    text +=
-      `💰 السعر: ${price}\n`;
-  }
-
-  if (location) {
-    text +=
-      `📍 الموقع: ${location}\n`;
-  }
-
-  if (author) {
-    text +=
-      `👤 البائع: ${author}\n`;
-  }
-
-  if (date) {
-    text +=
-      `📅 التاريخ: ${date}\n`;
-  }
-
-  if (description) {
-    text +=
-      `📝 الوصف:\n${description}\n`;
-  }
-
-  if (url) {
-    text +=
-      `🔗 ${url}\n`;
-  }
-
-  return text;
-}
-
-// ------------------------------------------------------
-// Apify API
-// ------------------------------------------------------
+// ============================================================
+// END OF PART 1
+// ============================================================
+// ============================================================
+// APIFY HELPERS
+// ============================================================
 
 function apifyHeaders() {
   return {
-    "Content-Type":
-      "application/json",
+    "Content-Type": "application/json",
   };
 }
 
-// ------------------------------------------------------
-// Start Apify run
-// ------------------------------------------------------
+
+// ============================================================
+// START APIFY RUN
+// ============================================================
 
 async function startApifyRun(
   searchQuery,
-  maxItems = 20
+  maxItems = 25
 ) {
   const token =
     process.env.APIFY_API_TOKEN;
@@ -921,24 +493,12 @@ async function startApifyRun(
     JSON.stringify(input)
   );
 
-  let response;
-
-try {
-  response = await fetch(url, {
-    method: "POST",
-    headers:
-      apifyHeaders(),
-    body:
-      JSON.stringify(input),
-  });
-} catch (error) {
-  console.error(
-    "APIFY FETCH ERROR:",
-    error
-  );
-
-  throw error;
-}
+  const response =
+    await fetch(url, {
+      method: "POST",
+      headers: apifyHeaders(),
+      body: JSON.stringify(input),
+    });
 
   const text =
     await response.text();
@@ -955,8 +515,15 @@ try {
     );
   }
 
-  const data =
-    JSON.parse(text);
+  let data;
+
+  try {
+    data = JSON.parse(text);
+  } catch (error) {
+    throw new Error(
+      "Apify returned invalid JSON."
+    );
+  }
 
   const run =
     data.data || data;
@@ -975,15 +542,22 @@ try {
   };
 }
 
-// ------------------------------------------------------
-// Get Apify run status
-// ------------------------------------------------------
+
+// ============================================================
+// GET APIFY RUN STATUS
+// ============================================================
 
 async function getApifyRun(
   runId
 ) {
   const token =
     process.env.APIFY_API_TOKEN;
+
+  if (!token) {
+    throw new Error(
+      "APIFY_API_TOKEN missing."
+    );
+  }
 
   const url =
     `https://api.apify.com/v2/actor-runs/${runId}?token=${encodeURIComponent(token)}`;
@@ -1000,37 +574,38 @@ async function getApifyRun(
     );
   }
 
-  const data =
-    JSON.parse(text);
+  let data;
+
+  try {
+    data = JSON.parse(text);
+  } catch (error) {
+    throw new Error(
+      "Apify status returned invalid JSON."
+    );
+  }
 
   return data.data || data;
 }
 
-// ------------------------------------------------------
-// Wait for Apify run
-// ------------------------------------------------------
+
+// ============================================================
+// WAIT FOR APIFY RUN
+// ============================================================
 
 async function waitForApifyRun(
   runId,
-  initialDatasetId
+  datasetId
 ) {
-  const startedAt =
-    Date.now();
+  const maxAttempts = 60;
 
-  const timeout =
-    4 * 60 * 1000;
-
-  let datasetId =
-    initialDatasetId;
-
-  while (
-    Date.now() - startedAt <
-    timeout
+  for (
+    let attempt = 0;
+    attempt < maxAttempts;
+    attempt++
   ) {
+
     const run =
-      await getApifyRun(
-        runId
-      );
+      await getApifyRun(runId);
 
     const status =
       String(
@@ -1040,37 +615,35 @@ async function waitForApifyRun(
     console.log(
       "APIFY STATUS:",
       runId,
-      status
+      status,
+      "attempt:",
+      attempt + 1
     );
 
-    if (
-      run.defaultDatasetId
-    ) {
-      datasetId =
-        run.defaultDatasetId;
-    }
 
     if (
       status === "SUCCEEDED"
     ) {
       return {
-        datasetId,
         status,
+        datasetId:
+          run.defaultDatasetId ||
+          datasetId ||
+          null,
       };
     }
 
+
     if (
-      [
-        "FAILED",
-        "ABORTED",
-        "TIMED-OUT",
-        "TIMED_OUT",
-      ].includes(status)
+      status === "FAILED" ||
+      status === "ABORTED" ||
+      status === "TIMED-OUT"
     ) {
       throw new Error(
-        `Apify run ${runId} ended with status ${status}`
+        `Apify run ended with status: ${status}`
       );
     }
+
 
     await new Promise(
       resolve =>
@@ -1082,26 +655,35 @@ async function waitForApifyRun(
   }
 
   throw new Error(
-    `Apify run ${runId} timed out while waiting.`
+    "Apify run timeout."
   );
 }
 
-// ------------------------------------------------------
-// Get Apify dataset
-// ------------------------------------------------------
+
+// ============================================================
+// GET DATASET ITEMS
+// ============================================================
 
 async function getApifyDataset(
   datasetId
 ) {
+  if (!datasetId) {
+    throw new Error(
+      "Apify dataset ID missing."
+    );
+  }
+
   const token =
     process.env.APIFY_API_TOKEN;
 
-  if (!datasetId) {
-    return [];
+  if (!token) {
+    throw new Error(
+      "APIFY_API_TOKEN missing."
+    );
   }
 
   const url =
-    `https://api.apify.com/v2/datasets/${datasetId}/items?token=${encodeURIComponent(token)}&clean=true&format=json`;
+    `https://api.apify.com/v2/datasets/${datasetId}/items?token=${encodeURIComponent(token)}`;
 
   const response =
     await fetch(url);
@@ -1111,8 +693,7 @@ async function getApifyDataset(
 
   console.log(
     "APIFY DATASET RESPONSE:",
-    response.status,
-    `length=${text.length}`
+    response.status
   );
 
   if (!response.ok) {
@@ -1121,21 +702,35 @@ async function getApifyDataset(
     );
   }
 
-  const data =
-    JSON.parse(text);
+  let data;
 
-  return Array.isArray(data)
-    ? data
-    : [];
+  try {
+    data = JSON.parse(text);
+  } catch (error) {
+    throw new Error(
+      "Apify dataset returned invalid JSON."
+    );
+  }
+
+  const items =
+    normalizeItems(data);
+
+  console.log(
+    "APIFY DATASET ITEMS:",
+    items.length
+  );
+
+  return items;
 }
 
-// ------------------------------------------------------
-// Complete one Apify search
-// ------------------------------------------------------
+
+// ============================================================
+// RUN COMPLETE APIFY SEARCH
+// ============================================================
 
 async function runApifySearch(
   searchQuery,
-  maxItems = 20
+  maxItems = 25
 ) {
   const started =
     await startApifyRun(
@@ -1157,8 +752,7 @@ async function runApifySearch(
   console.log(
     "APIFY RUN COMPLETED:",
     started.runId,
-    completed.status,
-    completed.datasetId
+    completed.status
   );
 
   const items =
@@ -1166,12 +760,13 @@ async function runApifySearch(
       completed.datasetId
     );
 
-  return items;
+  return normalizeItems(items);
 }
 
-// ------------------------------------------------------
-// Run jobs with limited concurrency
-// ------------------------------------------------------
+
+// ============================================================
+// CONCURRENCY
+// ============================================================
 
 async function runWithConcurrency(
   jobs,
@@ -1183,7 +778,9 @@ async function runWithConcurrency(
   let nextIndex = 0;
 
   async function worker() {
+
     while (true) {
+
       const index =
         nextIndex++;
 
@@ -1194,9 +791,15 @@ async function runWithConcurrency(
       }
 
       try {
-        results[index] =
+
+        const result =
           await jobs[index]();
+
+        results[index] =
+          normalizeItems(result);
+
       } catch (error) {
+
         console.error(
           "SEARCH JOB ERROR:",
           error.message
@@ -1207,14 +810,15 @@ async function runWithConcurrency(
     }
   }
 
-  const workers =
-    [];
+
+  const workers = [];
 
   const count =
     Math.min(
       limit,
       jobs.length
     );
+
 
   for (
     let i = 0;
@@ -1226,296 +830,95 @@ async function runWithConcurrency(
     );
   }
 
+
   await Promise.all(
     workers
   );
 
-  return results.flat();
+
+  return results.flatMap(
+    result =>
+      normalizeItems(result)
+  );
 }
 
-// ------------------------------------------------------
-// Purchase search queries
-// ------------------------------------------------------
+
+// ============================================================
+// END OF PART 2
+// ============================================================
+// ============================================================
+// PURCHASE SEARCH QUERIES
+// ============================================================
 
 function getPurchaseQueries() {
   return [
+
+    // iPhone 12 and above
     "куплю iphone 12",
     "куплю iphone 13",
     "куплю iphone 14",
     "куплю iphone 15",
+    "куплю iphone 16",
+
+    "шукаю iphone 12",
+    "шукаю iphone 13",
+    "шукаю iphone 14",
+    "шукаю iphone 15",
+    "шукаю iphone 16",
+
+    "хочу купить iphone 12",
+    "хочу купить iphone 13",
+    "хочу купить iphone 14",
+    "хочу купить iphone 15",
+    "хочу купить iphone 16",
+
+    // Samsung Galaxy S21 and above
     "куплю samsung galaxy s21",
     "куплю samsung galaxy s22",
+    "куплю samsung galaxy s23",
+    "куплю samsung galaxy s24",
+    "куплю samsung galaxy s25",
+
+    "шукаю samsung galaxy s21",
+    "шукаю samsung galaxy s22",
+    "шукаю samsung galaxy s23",
+    "шукаю samsung galaxy s24",
+    "шукаю samsung galaxy s25",
+
+    "хочу купить samsung galaxy s21",
+    "хочу купить samsung galaxy s22",
+    "хочу купить samsung galaxy s23",
+    "хочу купить samsung galaxy s24",
+    "хочу купить samsung galaxy s25",
+
+    // PlayStation 5
     "куплю ps5",
+    "куплю playstation 5",
+    "шукаю ps5",
+    "шукаю playstation 5",
+    "хочу купить ps5",
+    "хочу купить playstation 5",
+
+    // MacBook
     "куплю macbook",
+    "шукаю macbook",
+    "хочу купить macbook",
+
+    // Gaming Laptop
     "куплю игровой ноутбук",
-    "шукаю iphone samsung ps5 macbook ноутбук",
+    "шукаю игровой ноутбук",
+    "хочу купить игровой ноутбук",
+
+    "куплю ігровий ноутбук",
+    "шукаю ігровий ноутбук",
+    "хочу купити ігровий ноутбук"
   ];
 }
 
-// ------------------------------------------------------
-// Seller search query
-// ------------------------------------------------------
 
-function buildSellerQueries(
-  selected
-) {
-  const source =
-    [
-      selected.requestSearchProduct,
-      selected.exactProduct,
-      selected.title,
-      selected.normalizedProduct,
-      selected.description,
-      selected.text,
-    ]
-      .filter(Boolean)
-      .join(" ");
-
-  const detected =
-    detectProduct(source);
-
-  if (!detected) {
-    return [
-      String(
-        selected.title ||
-        selected.requestSearchProduct ||
-        "товар"
-      ),
-    ];
-  }
-
-  const product =
-    detected.product;
-
-  const queries = [
-    product,
-    product + " купить",
-    product + " продажа",
-  ];
-
-  // Keep exact useful specifications when present
-  const lower =
-    normalizeText(source);
-
-  const storage =
-    lower.match(
-      /\b(64|128|256|512|1024)\s*(gb|гб)\b/i
-    );
-
-  if (storage) {
-    queries.unshift(
-      `${product} ${storage[1]} ${storage[2]}`
-    );
-  }
-
-  return [
-    ...new Set(
-      queries
-    ),
-  ];
-}
-
-// ------------------------------------------------------
-// Seller validation
-// ------------------------------------------------------
-
-function isSellerListing(
-  item,
-  selected
-) {
-  const text =
-    itemText(item);
-
-  if (!text) {
-    return false;
-  }
-
-  const detected
- =
-    detectProduct(text);
-
-  if (!detected) {
-    return false;
-  }
-
-  const selectedText =
-    normalizeText(
-      [
-        selected.requestSearchProduct,
-        selected.exactProduct,
-        selected.title,
-        selected.normalizedProduct,
-        selected.description,
-      ]
-        .filter(Boolean)
-        .join(" ")
-    );
-
-  const selectedProduct =
-    detectProduct(
-      selectedText
-    );
-
-  if (!selectedProduct) {
-    return false;
-  }
-
-  // Must be same main product
-  if (
-    detected.category !==
-    selectedProduct.category
-  ) {
-    return false;
-  }
-
-  // For phones, require same model number
-  if (
-    detected.category ===
-    "iPhone"
-  ) {
-    const a =
-      selectedProduct.product.match(
-        /\d{2}/
-      );
-
-    const b =
-      detected.product.match(
-        /\d{2}/
-      );
-
-    if (
-      a &&
-      b &&
-      a[0] !== b[0]
-    ) {
-      return false;
-    }
-  }
-
-  if (
-    detected.category ===
-    "Samsung Galaxy"
-  ) {
-    const a =
-      selectedProduct.product.match(
-        /S\d{2}/i
-      );
-
-    const b =
-      detected.product.match(
-        /S\d{2}/i
-      );
-
-    if (
-      a &&
-      b &&
-      a[0].toLowerCase() !==
-      b[0].toLowerCase()
-    ) {
-      return false;
-    }
-  }
-
-  // Seller ads should normally contain price or selling language
-  const hasPrice =
-    parsePrice(item) !== null;
-
-  const sellerLanguage =
-    containsAny(
-      text,
-      [
-        "продам",
-        "продаю",
-        "продажа",
-        "продається",
-        "цена",
-        "ціна",
-        "грн",
-        "uah",
-        "₴",
-      ]
-    );
-
-  return (
-    hasPrice ||
-    sellerLanguage
-  );
-}
-
-// ------------------------------------------------------
-// Market price analysis
-// ------------------------------------------------------
-
-function calculateMarketOpinion(
-  item,
-  allItems
-) {
-  const price =
-    parsePrice(item);
-
-  if (!price) {
-    return "ℹ️ Оцінка ціни: недостатньо даних";
-  }
-
-  const prices =
-    allItems
-      .map(parsePrice)
-      .filter(
-        value =>
-          Number.isFinite(value) &&
-          value > 0
-      );
-
-  if (prices.length < 2) {
-    return "ℹ️ Оцінка ціни: недостатньо порівняльних оголошень";
-  }
-
-  const sorted =
-    [...prices].sort(
-      (a, b) => a - b
-    );
-
-  const middle =
-    Math.floor(
-      sorted.length / 2
-    );
-
-  const median =
-    sorted.length % 2
-      ? sorted[middle]
-      : (
-          sorted[middle - 1] +
-          sorted[middle]
-        ) / 2;
-
-  const lowLimit =
-    median * 0.85;
-
-  const highLimit =
-    median * 1.15;
-
-  if (price < lowLimit) {
-    return (
-      `🟢 رأي تقريبي بالسعر: منخفض ` +
-      `(مقارنة بمتوسط السوق الظاهر ≈ ${Math.round(median)} )`
-    );
-  }
-
-  if (price > highLimit) {
-    return (
-      `🔴 رأي تقريبي بالسعر: مرتفع ` +
-      `(مقارنة بمتوسط السوق الظاهر ≈ ${Math.round(median)} )`
-    );
-  }
-
-  return (
-    `🟡 رأي تقريبي بالسعر: طبيعي ` +
-    `(متوسط السوق الظاهر ≈ ${Math.round(median)} )`
-  );
-}
-// ------------------------------------------------------
-// Purchase request search
-// ------------------------------------------------------
+// ============================================================
+// SEARCH PURCHASE REQUESTS
+// ============================================================
 
 async function searchPurchaseRequests(
   chatId,
@@ -1529,277 +932,48 @@ async function searchPurchaseRequests(
   const queries =
     getPurchaseQueries();
 
-  const jobs =
-  queries.map(
-    query =>
-      async () => {
-        console.log(
-          "PURCHASE QUERY:",
-          query
-        );
-
-        const items =
-          await runApifySearch(
-            query,
-            20
-          );
-
-        return (Array.isArray(items)
-          ? items
-          : []
-        ).map(
-          item => ({
-            ...item,
-            purchaseSearchQuery:
-              query
-          })
-        );
-      }
-  );
-const jobResults =
-  await runWithConcurrency(
-    jobs,
-    4
-  );
-
-const rawItems =
-  jobResults.flatMap(
-    (result, index) => {
-      const query =
-        queries[index];
-
-      const items =
-        Array.isArray(result)
-          ? result
-          : [];
-
-      return items.map(
-        item => ({
-          ...item,
-          purchaseSearchQuery:
-            query
-        })
-      );
-    }
-  );
-  
   console.log(
-    "PURCHASE RAW ITEMS:",
-    rawItems.length
-  );
-const purchaseSamples = rawItems.filter(item => {
-  const title = String(
-    item.title || item.name || ""
-  ).toLowerCase();
-
-  return (
-    title.includes("куплю") ||
-    title.includes("ищу") ||
-    title.includes("нужен") ||
-    title.includes("нужна") ||
-    title.includes("нужно") ||
-    title.includes("шукаю") ||
-    title.includes("потрібен") ||
-    title.includes("потрібна") ||
-    title.includes("потрібно")
-  );
-});
-
-console.log(
-  "PURCHASE INTENT SAMPLES:",
-  JSON.stringify(
-    purchaseSamples.slice(0, 5),
-    null,
-    2
-  )
-);
-console.log(
-  "PURCHASE TITLES SAMPLE:",
-  rawItems
-    .slice(0, 20)
-    .map(item => item.title)
-);
-  const unique =
-    new Map();
-
-  for (
-    const item of rawItems
-  ) {
-    if (
-      !isPurchaseRequest(item)
-    ) {
-      continue;
-    }
-
-    const key =
-      getDuplicateKey(item);
-
-    if (
-      !unique.has(key)
-    ) {
-      const detected =
-        getDetectedProduct(item);
-
-      const prepared = {
-        ...item,
-
-        requestSearchProduct:
-          detected
-            ? detected.product
-            : "",
-
-        exactProduct:
-          detected
-            ? detected.product
-            : "",
-
-        normalizedProduct:
-          detected
-            ? detected.product
-            : "",
-
-        searchSource:
-          "OLX",
-      };
-
-      unique.set(
-        key,
-        prepared
-      );
-    }
-  }
-
-  const results =
-    Array.from(
-      unique.values()
-    );
-
-  console.log(
-    "PURCHASE FINAL RESULTS:",
-    results.length
+    "PURCHASE QUERIES:",
+    queries.length
   );
 
-  const session =
-    await sessionsStore.get(
-      `chat-${chatId}`,
-      {
-        type: "json",
-        
-      }
-    );
 
-  const updatedSession =
-    session || {
-      step: "idle",
-      purchaseRequests: [],
-      selectedRequest: null,
-      selectedNumber: null,
-    };
-
-  updatedSession.purchaseRequests =
-    results;
-
-  updatedSession.selectedRequest =
-    null;
-
-  updatedSession.selectedNumber =
-    null;
-
-  updatedSession.step =
-    results.length
-      ? "waitingForSelection"
-      : "idle";
-
-  updatedSession.updatedAt =
-    Date.now();
-
-  await sessionsStore.setJSON(
-    `chat-${chatId}`,
-    updatedSession
-  );
-
-  if (!results.length) {
-    await sendTelegram(
-      token,
-      chatId,
-      "⚠️ انتهى البحث في OLX، لكن لم يتم العثور على طلبات شراء مطابقة للفئات المطلوبة.\n\n" +
-      "يمكنك إعادة المحاولة بإرسال:\n" +
-      "/search"
-    );
-
-    return;
-  }
-
-  let message =
-    "✅ انتهى البحث عن طلبات الشراء.\n\n" +
-    `وجد الوكيل ${results.length} طلبًا.\n\n`;
-
-  for (
-    let i = 0;
-    i < results.length;
-    i++
-  ) {
-    message +=
-      formatPurchaseRequest(
-        results[i],
-        i + 1
-      );
-
-    message +=
-      "\n━━━━━━━━━━━━━━\n\n";
-  }
-
-  message +=
-    "📌 أرسل رقم الطلب الذي تريد اختياره.";
-
-  await sendLongTelegram(
-    token,
-    chatId,
-    message
-  );
-}
-// ------------------------------------------------------
-// Seller search
-// ------------------------------------------------------
-
-async function searchSellers(
-  chatId,
-  token,
-  selected
-) {
-  console.log(
-    "SELLER SEARCH START:",
-    chatId,
-    JSON.stringify(selected)
-  );
-
-  const queries =
-    buildSellerQueries(
-      selected
-    );
-
-  console.log(
-    "SELLER QUERIES:",
-    queries
-  );
+  // ----------------------------------------------------------
+  // Create Apify search jobs
+  // ----------------------------------------------------------
 
   const jobs =
     queries.map(
       query =>
         async () => {
+
+          console.log(
+            "PURCHASE SEARCH QUERY:",
+            query
+          );
+
           const items =
             await runApifySearch(
               query,
               25
             );
 
-          return (
-            Array.isArray(items)
-              ? items
-              : []
-          ).map(
+
+          const normalized =
+            normalizeItems(items);
+
+
+          console.log(
+            "PURCHASE QUERY RESULTS:",
+            query,
+            normalized.length
+          );
+
+
+          return normalized.map(
             item => ({
               ...item,
+
               purchaseSearchQuery:
                 query
             })
@@ -1807,34 +981,801 @@ async function searchSellers(
         }
     );
 
+
+  // ----------------------------------------------------------
+  // Run searches with limited concurrency
+  // ----------------------------------------------------------
+
   const rawItems =
     await runWithConcurrency(
       jobs,
       4
     );
 
+
   console.log(
-    "SELLER RAW ITEMS:",
+    "PURCHASE RAW ITEMS:",
     rawItems.length
   );
+
+
+  // ----------------------------------------------------------
+  // Diagnostic logging
+  // ----------------------------------------------------------
+
+  const purchaseSamples =
+    rawItems.filter(
+      item => {
+
+        const title =
+          normalizeText(
+            item.title ||
+            item.name ||
+            ""
+          );
+
+        const description =
+          normalizeText(
+            item.description ||
+            item.text ||
+            ""
+          );
+
+        const text =
+          `${title} ${description}`;
+
+        return containsAny(
+          text,
+          [
+            "куплю",
+            "ищу",
+            "нужен",
+            "нужна",
+            "нужно",
+            "шукаю",
+            "потрібен",
+            "потрібна",
+            "потрібно"
+          ]
+        );
+      }
+    );
+
+
+  console.log(
+    "PURCHASE INTENT SAMPLES:",
+    JSON.stringify(
+      purchaseSamples.slice(0, 10),
+      null,
+      2
+    )
+  );
+
+
+  console.log(
+    "PURCHASE TITLES SAMPLE:",
+    rawItems
+      .slice(0, 20)
+      .map(
+        item =>
+          item.title ||
+          item.name ||
+          ""
+      )
+  );
+
+
+  // ----------------------------------------------------------
+  // Filter and remove duplicates
+  // ----------------------------------------------------------
 
   const unique =
     new Map();
 
+
   for (
     const item of rawItems
   ) {
+
     if (
-      !isSellerListing(
-        item,
-        selected
+      !isPurchaseRequest(item)
+    ) {
+      continue;
+    }
+
+
+    const key =
+      getDuplicateKey(item);
+
+
+    if (
+      unique.has(key)
+    ) {
+      continue;
+    }
+
+
+    const detected =
+      getDetectedProduct(item);
+
+
+    const prepared = {
+      ...item,
+
+      requestSearchProduct:
+        detected
+          ? detected.product
+          : "",
+
+      exactProduct:
+        detected
+          ? detected.product
+          : "",
+
+      normalizedProduct:
+        detected
+          ? detected.product
+          : "",
+
+      searchSource:
+        "OLX"
+    };
+
+
+    unique.set(
+      key,
+      prepared
+    );
+  }
+
+
+  const results =
+    Array.from(
+      unique.values()
+    );
+
+
+  console.log(
+    "PURCHASE FINAL RESULTS:",
+    results.length
+  );
+
+
+  // ----------------------------------------------------------
+  // Save results to Telegram session
+  // ----------------------------------------------------------
+
+  const session =
+    await sessionsStore.get(
+      `chat-${chatId}`,
+      {
+        type: "json"
+      }
+    );
+
+
+  const updatedSession =
+    session || {
+      step: "idle",
+      purchaseRequests: [],
+      selectedRequest: null,
+      selectedNumber: null
+    };
+
+
+  updatedSession.purchaseRequests =
+    results;
+
+
+  updatedSession.selectedRequest =
+    null;
+
+
+  updatedSession.selectedNumber =
+    null;
+
+
+  updatedSession.step =
+    results.length
+      ? "waitingForSelection"
+      : "idle";
+
+
+  updatedSession.updatedAt =
+    Date.now();
+
+
+  await sessionsStore.setJSON(
+    `chat-${chatId}`,
+    updatedSession
+  );
+
+
+  // ----------------------------------------------------------
+  // No results
+  // ----------------------------------------------------------
+
+  if (!results.length) {
+
+    await sendTelegram(
+      token,
+      chatId,
+
+      "⚠️ انتهى البحث في OLX، لكن لم يتم العثور على طلبات شراء مطابقة للفئات المطلوبة.\n\n" +
+
+      "المطلوب البحث عنه:\n" +
+
+      "📱 iPhone 12 وما فوق\n" +
+      "📱 Samsung Galaxy S21 وما فوق\n" +
+      "🎮 PlayStation 5\n" +
+      "💻 MacBook\n" +
+      "💻 Gaming Laptop\n\n" +
+
+      "يمكنك إعادة المحاولة بإرسال:\n" +
+      "/search"
+    );
+
+    return;
+  }
+
+
+  // ----------------------------------------------------------
+  // Build Telegram results
+  // ----------------------------------------------------------
+
+  let message =
+    "✅ انتهى البحث عن طلبات الشراء.\n\n" +
+
+    `وجد الوكيل ${results.length} طلبًا.\n\n`;
+
+
+  for (
+    let i = 0;
+    i < results.length;
+    i++
+  ) {
+
+    message +=
+      formatPurchaseRequest(
+        results[i],
+        i + 1
+      );
+
+
+    message +=
+      "\n━━━━━━━━━━━━━━\n\n";
+  }
+
+
+  message +=
+    "📌 أرسل رقم الطلب الذي تريد اختياره.";
+
+
+  await sendLongTelegram(
+    token,
+    chatId,
+    message
+  );
+}
+
+
+// ============================================================
+// END OF PART 3
+// ============================================================
+// ============================================================
+// FORMAT PURCHASE REQUEST
+// ============================================================
+
+function formatPurchaseRequest(
+  item,
+  number
+) {
+  const detected =
+    getDetectedProduct(item);
+
+  const title =
+    item.title ||
+    item.name ||
+    "بدون عنوان";
+
+  const description =
+    item.description ||
+    item.text ||
+    item.details ||
+    "";
+
+  const city =
+    item.city ||
+    item.location ||
+    item.region ||
+    "غير محدد";
+
+  const region =
+    item.region ||
+    "";
+
+  const url =
+    item.url ||
+    item.link ||
+    item.listingUrl ||
+    "";
+
+  const price =
+    item.price ||
+    item.priceKop ||
+    null;
+
+  const currency =
+    item.currency ||
+    "UAH";
+
+
+  let message =
+    "🔹 طلب شراء رقم " +
+    number +
+    "\n\n";
+
+
+  // ----------------------------------------------------------
+  // Product
+  // ----------------------------------------------------------
+
+  message +=
+    "📦 المنتج: " +
+    (
+      detected
+        ? detected.product
+        : title
+    ) +
+    "\n";
+
+
+  // ----------------------------------------------------------
+  // Original title
+  // ----------------------------------------------------------
+
+  message +=
+    "📝 الإعلان: " +
+    title +
+    "\n";
+
+
+  // ----------------------------------------------------------
+  // Location
+  // ----------------------------------------------------------
+
+  message +=
+    "📍 المدينة: " +
+    city +
+    "\n";
+
+
+  if (
+    region &&
+    region !== city
+  ) {
+    message +=
+      "🗺 المنطقة: " +
+      region +
+      "\n";
+  }
+
+
+  // ----------------------------------------------------------
+  // Price
+  // ----------------------------------------------------------
+
+  if (
+    price !== null &&
+    price !== undefined &&
+    price !== ""
+  ) {
+
+    let displayPrice =
+      price;
+
+    if (
+      typeof price === "number" &&
+      item.priceKop
+    ) {
+      displayPrice =
+        price / 100;
+    }
+
+    message +=
+      "💰 السعر المذكور: " +
+      displayPrice +
+      " " +
+      currency +
+      "\n";
+  }
+
+
+  // ----------------------------------------------------------
+  // Description
+  // ----------------------------------------------------------
+
+  if (
+    description
+  ) {
+
+    const shortDescription =
+      String(description)
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 500);
+
+    message +=
+      "\n📄 التفاصيل:\n" +
+      shortDescription +
+      "\n";
+  }
+
+
+  // ----------------------------------------------------------
+  // Source
+  // ----------------------------------------------------------
+
+  message +=
+    "\n🌐 المصدر: OLX\n";
+
+
+  // ----------------------------------------------------------
+  // Link
+  // ----------------------------------------------------------
+
+  if (url) {
+    message +=
+      "🔗 الرابط:\n" +
+      url +
+      "\n";
+  }
+
+
+  return message;
+}
+
+
+// ============================================================
+// SEND TELEGRAM MESSAGE
+// ============================================================
+
+async function sendTelegram(
+  token,
+  chatId,
+  text
+) {
+  if (!token) {
+    throw new Error(
+      "TELEGRAM_BOT_TOKEN missing."
+    );
+  }
+
+  if (!chatId) {
+    throw new Error(
+      "Telegram chat ID missing."
+    );
+  }
+
+  const response =
+    await fetch(
+      `https://api.telegram.org/bot${token}/sendMessage`,
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
+
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: text,
+          disable_web_page_preview:
+            false
+        })
+      }
+    );
+
+
+  const result =
+    await response.text();
+
+
+  console.log(
+    "TELEGRAM RESPONSE:",
+    response.status,
+    result
+  );
+
+
+  if (!response.ok) {
+    throw new Error(
+      `Telegram send failed: ${response.status}`
+    );
+  }
+
+
+  let data;
+
+  try {
+    data =
+      JSON.parse(result);
+  } catch (error) {
+    throw new Error(
+      "Telegram returned invalid JSON."
+    );
+  }
+
+
+  if (!data.ok) {
+    throw new Error(
+      data.description ||
+      "Telegram API error."
+    );
+  }
+
+
+  return data;
+}
+
+
+// ============================================================
+// SEND LONG TELEGRAM MESSAGE
+// ============================================================
+
+async function sendLongTelegram(
+  token,
+  chatId,
+  text
+) {
+  const maxLength =
+    4000;
+
+  if (
+    !text ||
+    !String(text).trim()
+  ) {
+    return;
+  }
+
+
+  const value =
+    String(text);
+
+
+  if (
+    value.length <= maxLength
+  ) {
+
+    await sendTelegram(
+      token,
+      chatId,
+      value
+    );
+
+    return;
+  }
+
+
+  let start = 0;
+
+
+  while (
+    start < value.length
+  ) {
+
+    let end =
+      Math.min(
+        start + maxLength,
+        value.length
+      );
+
+
+    if (
+      end < value.length
+    ) {
+
+      const lastBreak =
+        value.lastIndexOf(
+          "\n",
+          end
+        );
+
+
+      if (
+        lastBreak > start
+      ) {
+        end =
+          lastBreak;
+      }
+    }
+
+
+    const part =
+      value.slice(
+        start,
+        end
+      ).trim();
+
+
+    if (part) {
+
+      await sendTelegram(
+        token,
+        chatId,
+        part
+      );
+    }
+
+
+    start =
+      end;
+  }
+}
+
+
+// ============================================================
+// END OF PART 4
+// ============================================================
+// ============================================================
+// SELLER SEARCH
+// ============================================================
+
+async function searchSellers(
+  chatId,
+  token,
+  request
+) {
+  const product =
+    request.exactProduct ||
+    request.requestSearchProduct ||
+    request.title ||
+    "";
+
+  console.log(
+    "SELLER SEARCH START:",
+    product
+  );
+
+  await sendTelegram(
+    token,
+    chatId,
+    "🔎 بدأ البحث عن بائع.\n\n" +
+    "📦 الصنف المطلوب:\n" +
+    product +
+    "\n\n" +
+    "📍 المصدر: OLX\n\n" +
+    "⏳ انتظر النتائج..."
+  );
+
+
+  const queries = [
+    product,
+    `${product} продам`,
+    `${product} продаю`
+  ];
+
+
+  const jobs =
+    queries.map(
+      query =>
+        async () => {
+
+          const items =
+            await runApifySearch(
+              query,
+              25
+            );
+
+          return normalizeItems(
+            items
+          ).map(
+            item => ({
+              ...item,
+              sellerSearchQuery:
+                query
+            })
+          );
+        }
+    );
+
+
+  const rawItems =
+    await runWithConcurrency(
+      jobs,
+      3
+    );
+
+
+  const unique =
+    new Map();
+
+
+  for (
+    const item of rawItems
+  ) {
+
+    const title =
+      normalizeText(
+        item.title ||
+        item.name ||
+        ""
+      );
+
+    const description =
+      normalizeText(
+        item.description ||
+        item.text ||
+        ""
+      );
+
+    const text =
+      `${title} ${description}`;
+
+
+    if (!text) {
+      continue;
+    }
+
+
+    const sellerWords = [
+      "продам",
+      "продаю",
+      "продажа",
+      "продається",
+      "продается",
+      "в наличии",
+      "є в наявності"
+    ];
+
+
+    if (
+      !containsAny(
+        text,
+        sellerWords
       )
     ) {
       continue;
     }
 
+
+    const excluded = [
+      "чохол",
+      "чехол",
+      "case",
+      "дисплей",
+      "экран",
+      "екран",
+      "стекло",
+      "скло",
+      "подписка",
+      "підписка",
+      "аккаунт",
+      "акаунт",
+      "игра",
+      "гра",
+      "ремонт",
+      "запчасти",
+      "запчастина",
+      "аксессуар",
+      "аксесуари"
+    ];
+
+
+    if (
+      containsAny(
+        text,
+        excluded
+      )
+    ) {
+      continue;
+    }
+
+
     const key =
       getDuplicateKey(item);
+
 
     if (
       !unique.has(key)
@@ -1846,97 +1787,53 @@ async function searchSellers(
     }
   }
 
+
   const results =
     Array.from(
       unique.values()
     );
+
 
   console.log(
     "SELLER FINAL RESULTS:",
     results.length
   );
 
-  const session =
-    await sessionsStore.get(
-      `chat-${chatId}`,
-      {
-        type: "json",
-        consistency: "strong"
-      }
-    );
 
-  const updatedSession =
-    session || {
-      step: "idle",
-      purchaseRequests: [],
-      selectedRequest:
-        selected,
-      selectedNumber: null,
-    };
-
-  updatedSession.step =
-    "waitingForSellerCommand";
-
-  updatedSession.selectedRequest =
-    selected;
-
-  updatedSession.sellerResults =
-    results;
-
-  updatedSession.updatedAt =
-    Date.now();
-
-  await sessionsStore.setJSON(
-    `chat-${chatId}`,
-    updatedSession
-  );
   if (!results.length) {
+
     await sendTelegram(
       token,
       chatId,
-      "⚠️ انتهى البحث في OLX، لكن لم يتم العثور على إعلانات بيع مطابقة للصنف المطلوب.\n\n" +
-      "يمكنك العودة واختيار طلب آخر بإرسال:\n" +
-      "/search"
+      "⚠️ لم يتم العثور على إعلانات بيع مطابقة للطلب المحدد.\n\n" +
+      "يمكنك اختيار طلب شراء آخر وإعادة البحث."
     );
 
     return;
   }
 
-  const product =
-    selected.requestSearchProduct ||
-    selected.exactProduct ||
-    selected.title ||
-    "الصنف المطلوب";
 
   let message =
     "✅ انتهى البحث عن البائعين.\n\n" +
-    `📦 الصنف المطلوب: ${product}\n\n` +
     `وجد الوكيل ${results.length} إعلان بيع.\n\n`;
+
 
   for (
     let i = 0;
     i < results.length;
     i++
   ) {
-    message +=
-      formatSellerListing(
-        results[i],
-        i + 1
-      );
 
     message +=
-      calculateMarketOpinion(
+      formatSellerResult(
         results[i],
-        results
+        i + 1
       );
 
     message +=
       "\n━━━━━━━━━━━━━━\n\n";
   }
 
-  message +=
-    "ℹ️ تقييم السعر استرشادي فقط ويعتمد على الإعلانات التي ظهرت في البحث.\n\n" +
-    "🤝 أنت تتواصل بنفسك مع المشتري والبائع وتتفاوض وتغلق الصفقة.";
 
   await sendLongTelegram(
     token,
@@ -1944,165 +1841,332 @@ async function searchSellers(
     message
   );
 }
-// ------------------------------------------------------
-// Main background handler
-// ------------------------------------------------------
 
-exports.handler = async function (
-  event
+
+// ============================================================
+// FORMAT SELLER RESULT
+// ============================================================
+
+function formatSellerResult(
+  item,
+  number
 ) {
-connectLambda(event);
+  const title =
+    item.title ||
+    item.name ||
+    "بدون عنوان";
 
-sessionsStore = getStore(
-  "trade-agent-sessions"
-);
-  const token =
-    process.env.TELEGRAM_BOT_TOKEN;
+  const city =
+    item.city ||
+    item.location ||
+    item.region ||
+    "غير محدد";
 
-  if (!token) {
-    console.error(
-      "TELEGRAM_BOT_TOKEN missing."
-    );
+  const region =
+    item.region ||
+    "";
 
-    return {
-      statusCode: 500,
-      body:
-        "TELEGRAM_BOT_TOKEN missing",
-    };
-  }
+  const url =
+    item.url ||
+    item.link ||
+    item.listingUrl ||
+    "";
 
-  let body = {};
+  let price =
+    item.price ||
+    item.priceKop ||
+    null;
 
-  try {
-    body =
-      JSON.parse(
-        event.body || "{}"
-      );
-  } catch (error) {
-    console.error(
-      "INVALID JSON:",
-      error.message
-    );
-
-    return {
-      statusCode: 400,
-      body:
-        "Invalid JSON",
-    };
-  }
-
-  const chatId =
-    body.chatId;
-
-  const mode =
-    body.mode;
-
-  const request =
-    body.request || null;
-
-  if (!chatId || !mode) {
-    console.error(
-      "Missing chatId or mode."
-    );
-
-    return {
-      statusCode: 400,
-      body:
-        "Missing chatId or mode",
-    };
-  }
-
-  console.log(
-    "BACKGROUND FUNCTION START:",
-    JSON.stringify({
-      chatId,
-      mode,
-    })
-  );
-if (
-    mode === "purchaseRequests"
+  if (
+    typeof price === "number" &&
+    item.priceKop
   ) {
+    price =
+      price / 100;
+  }
+
+  const currency =
+    item.currency ||
+    "UAH";
+
+
+  let message =
+    "🔹 إعلان بيع رقم " +
+    number +
+    "\n\n";
+
+  message +=
+    "📦 المنتج: " +
+    title +
+    "\n";
+
+  message +=
+    "📍 المدينة: " +
+    city +
+    "\n";
+
+
+  if (
+    region &&
+    region !== city
+  ) {
+    message +=
+      "🗺 المنطقة: " +
+      region +
+      "\n";
+  }
+
+
+  if (
+    price !== null &&
+    price !== undefined &&
+    price !== ""
+  ) {
+    message +=
+      "💰 السعر: " +
+      price +
+      " " +
+      currency +
+      "\n";
+  }
+
+
+  message +=
+    "🌐 المصدر: OLX\n";
+
+
+  if (url) {
+    message +=
+      "🔗 الرابط:\n" +
+      url +
+      "\n";
+  }
+
+
+  return message;
+}
+
+
+// ============================================================
+// NETLIFY FUNCTION HANDLER
+// ============================================================
+
+exports.handler =
+  async function(event) {
+
     try {
-      await searchPurchaseRequests(
-        chatId,
-        token
-      );
-    } catch (error) {
-      console.error(
-        "PURCHASE BACKGROUND FAILED:",
-        error
-      );
 
-      try {
-        await sendTelegram(
-          token,
-          chatId,
-          "❌ حدث خطأ أثناء البحث عن طلبات الشراء.\n\n" +
-          error.message
+      connectLambda(event);
+
+
+      sessionsStore =
+        getStore(
+          "trade-agent-sessions"
         );
-      } catch (
-        telegramError
+
+
+      let body = {};
+
+
+      if (
+        event.body
       ) {
-        console.error(
-          "TELEGRAM ERROR:",
-          telegramError
-        );
-      }
-    }
-  }
-
-  else if (
-    mode === "seller"
-  ) {
-    if (!request) {
-      return {
-        statusCode: 400,
-        body:
-          "Missing selected request",
-      };
-    }
-
-    searchSellers(
-      chatId,
-      token,
-      request
-    ).catch(
-      async error => {
-        console.error(
-          "SELLER BACKGROUND FAILED:",
-          error
-        );
-
         try {
-          await sendTelegram(
-            token,
-            chatId,
-            "❌ حدث خطأ أثناء البحث عن البائعين.\n\n" +
-            error.message
-          );
-        } catch (
-          telegramError
-        ) {
+          body =
+            JSON.parse(
+              event.body
+            );
+        } catch (error) {
           console.error(
-            "TELEGRAM ERROR:",
-            telegramError
+            "INVALID REQUEST BODY:",
+            error.message
           );
         }
       }
-    );
-  }
 
-  else {
-    return {
-      statusCode: 400,
-      body:
-        "Unknown search mode",
-    };
-  }
-  
-  return {
-    statusCode: 202,
-    body:
-      "Background search started",
+
+      const mode =
+        body.mode ||
+        body.searchMode ||
+        "";
+
+
+      const chatId =
+        body.chatId ||
+        body.chat_id;
+
+
+      const token =
+        process.env
+          .TELEGRAM_BOT_TOKEN;
+
+
+      if (!chatId) {
+        return {
+          statusCode: 400,
+          body:
+            "Missing chatId"
+        };
+      }
+
+
+      if (!token) {
+        return {
+          statusCode: 500,
+          body:
+            "TELEGRAM_BOT_TOKEN missing"
+        };
+      }
+
+
+      // --------------------------------------------------------
+      // PURCHASE REQUEST SEARCH
+      // --------------------------------------------------------
+
+      if (
+        mode ===
+        "purchaseRequests"
+      ) {
+
+        try {
+
+          await searchPurchaseRequests(
+            chatId,
+            token
+          );
+
+        } catch (error) {
+
+          console.error(
+            "PURCHASE BACKGROUND FAILED:",
+            error
+          );
+
+          try {
+
+            await sendTelegram(
+              token,
+              chatId,
+
+              "❌ حدث خطأ أثناء البحث عن طلبات الشراء.\n\n" +
+              error.message
+            );
+
+          } catch (
+            telegramError
+          ) {
+
+            console.error(
+              "TELEGRAM ERROR:",
+              telegramError
+            );
+          }
+        }
+
+
+        return {
+          statusCode: 200,
+          body: "OK"
+        };
+      }
+
+
+      // --------------------------------------------------------
+      // SELLER SEARCH
+      // --------------------------------------------------------
+
+      if (
+        mode === "seller"
+      ) {
+
+        const request =
+          body.request ||
+          body.selectedRequest;
+
+
+        if (!request) {
+
+          return {
+            statusCode: 400,
+            body:
+              "Missing selected request"
+          };
+        }
+
+
+        try {
+
+          await searchSellers(
+            chatId,
+            token,
+            request
+          );
+
+        } catch (error) {
+
+          console.error(
+            "SELLER BACKGROUND FAILED:",
+            error
+          );
+
+          try {
+
+            await sendTelegram(
+              token,
+              chatId,
+
+              "❌ حدث خطأ أثناء البحث عن البائعين.\n\n" +
+              error.message
+            );
+
+          } catch (
+            telegramError
+          ) {
+
+            console.error(
+              "TELEGRAM ERROR:",
+              telegramError
+            );
+          }
+        }
+
+
+        return {
+          statusCode: 200,
+          body: "OK"
+        };
+      }
+
+
+      // --------------------------------------------------------
+      // UNKNOWN MODE
+      // --------------------------------------------------------
+
+      return {
+        statusCode: 400,
+        body:
+          "Unknown search mode"
+      };
+
+
+    } catch (error) {
+
+      console.error(
+        "BACKGROUND FUNCTION ERROR:",
+        error
+      );
+
+
+      return {
+        statusCode: 500,
+        body:
+          "Internal server error: " +
+          error.message
+      };
+    }
   };
-};
+
+
+// ============================================================
+// END OF FILE
+// ============================================================
